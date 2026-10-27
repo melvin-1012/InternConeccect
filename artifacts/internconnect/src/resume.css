@@ -1,0 +1,68 @@
+.resume-card .card-content {
+  display: grid;
+  justify-items: start;
+  gap: 11px;
+}
+
+.resume-privacy {
+  max-width: 600px;
+  margin: 0 0 2px;
+  color: hsl(var(--muted-foreground));
+  font-size: 10px;
+  line-height: 1.65;
+}
+
+.resume-current {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  max-width: 430px;
+  padding: 11px 12px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 11px;
+  color: hsl(var(--foreground));
+  text-decoration: none;
+}
+
+.resume-current > span {
+  display: grid;
+  gap: 3px;
+  flex: 1;
+}
+
+.resume-current strong {
+  font-size: 10px;
+}
+
+.resume-current small,
+.resume-upload-hint {
+  color: hsl(var(--muted-foreground));
+  font-size: 9px;
+}
+
+.resume-card button svg {
+  margin-right: 6px;
+}
+
+.resume-card .inline-success,
+.resume-card .inline-error {
+  margin: 0;
+}
+
+.verify-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.schedule-field {
+  display: grid;
+  gap: 7px;
+}
+
+.schedule-field > span {
+  color: hsl(var(--foreground));
+  font-size: 10px;
+  font-weight: 600;
+}
