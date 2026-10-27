@@ -1,0 +1,1062 @@
+openapi: 3.1.0
+info:
+  # Do not change the title, if the title changes, the import paths will be broken
+  title: Api
+  version: 0.1.0
+  description: InternConnect internship and placement management API
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: health
+    description: Health operations
+  - name: public
+    description: Public landing page and opportunity discovery
+  - name: student
+    description: Student profile, applications, and saved roles
+  - name: recruiter
+    description: Recruiter hiring and applicant management
+  - name: placement
+    description: Placement office operations and analytics
+  - name: admin
+    description: Platform administration
+  - name: notifications
+    description: In-app notifications and scheduling
+  - name: storage
+    description: Private resume uploads and object serving
+paths:
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      description: Returns server health status
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+  /public/stats:
+    get:
+      operationId: getPublicStats
+      tags: [public]
+      summary: Public platform statistics
+      responses:
+        "200":
+          description: Clearly labeled sample platform statistics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PublicStats"
+  /opportunities:
+    get:
+      operationId: listOpportunities
+      tags: [public]
+      summary: Search and filter internship and placement opportunities
+      parameters:
+        - in: query
+          name: search
+          schema: { type: string }
+        - in: query
+          name: type
+          schema: { type: string, enum: [internship, full-time] }
+        - in: query
+          name: mode
+          schema: { type: string, enum: [onsite, hybrid, remote] }
+        - in: query
+          name: location
+          schema: { type: string }
+        - in: query
+          name: department
+          schema: { type: string }
+        - in: query
+          name: sort
+          schema: { type: string, enum: [newest, deadline, stipend, relevance] }
+        - in: query
+          name: page
+          schema: { type: integer, minimum: 1, default: 1 }
+        - in: query
+          name: pageSize
+          schema: { type: integer, minimum: 1, maximum: 50, default: 12 }
+      responses:
+        "200":
+          description: Matching opportunities and pagination metadata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OpportunityPage"
+    post:
+      operationId: createOpportunity
+      tags: [recruiter]
+      summary: Create a recruitment opportunity
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OpportunityInput"
+      responses:
+        "201":
+          description: Created opportunity
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Opportunity"
+  /opportunities/{id}:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: string }
+    get:
+      operationId: getOpportunity
+      tags: [public]
+      summary: Get an opportunity and its full description
+      responses:
+        "200":
+          description: Opportunity details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Opportunity"
+        "404":
+          description: Opportunity not found
+    patch:
+      operationId: updateOpportunity
+      tags: [recruiter]
+      summary: Update or change the status of an opportunity
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OpportunityUpdate"
+      responses:
+        "200":
+          description: Updated opportunity
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Opportunity"
+    delete:
+      operationId: deleteOpportunity
+      tags: [recruiter]
+      summary: Archive an opportunity
+      responses:
+        "204":
+          description: Opportunity archived
+  /dashboard/{role}:
+    get:
+      operationId: getDashboard
+      tags: [student, recruiter, placement, admin]
+      summary: Role-specific dashboard summary and activity
+      parameters:
+        - in: path
+          name: role
+          required: true
+          schema:
+            type: string
+            enum: [student, recruiter, placement-officer, administrator]
+      responses:
+        "200":
+          description: Summary for the selected demo or authenticated role
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardSummary"
+  /me/profile:
+    get:
+      operationId: getMyProfile
+      tags: [student]
+      summary: Read the current student's profile
+      responses:
+        "200":
+          description: Student profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StudentProfile"
+    put:
+      operationId: updateMyProfile
+      tags: [student]
+      summary: Save the current student's profile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StudentProfileInput"
+      responses:
+        "200":
+          description: Updated student profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StudentProfile"
+  /me/applications:
+    get:
+      operationId: listMyApplications
+      tags: [student]
+      summary: List the current student's applications and status history
+      responses:
+        "200":
+          description: Student applications
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Application"
+  /opportunities/{id}/apply:
+    post:
+      operationId: applyToOpportunity
+      tags: [student]
+      summary: Submit an application to an opportunity
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApplicationInput"
+      responses:
+        "201":
+          description: Submitted application
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Application"
+        "409":
+          description: An application already exists
+  /me/saved-opportunities:
+    get:
+      operationId: listSavedOpportunities
+      tags: [student]
+      summary: List saved opportunities
+      responses:
+        "200":
+          description: Saved opportunities
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Opportunity"
+  /me/saved-opportunities/{id}:
+    put:
+      operationId: saveOpportunity
+      tags: [student]
+      summary: Save an opportunity
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "204":
+          description: Opportunity saved
+    delete:
+      operationId: unsaveOpportunity
+      tags: [student]
+      summary: Remove a saved opportunity
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "204":
+          description: Opportunity removed from saved list
+  /recruiter/company:
+    get:
+      operationId: getRecruiterCompany
+      tags: [recruiter]
+      summary: Get the recruiter's company profile
+      responses:
+        "200":
+          description: Company profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Company"
+    put:
+      operationId: updateRecruiterCompany
+      tags: [recruiter]
+      summary: Update the recruiter's company profile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CompanyInput"
+      responses:
+        "200":
+          description: Updated company
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Company"
+  /recruiter/applicants:
+    get:
+      operationId: listOpportunityApplicants
+      tags: [recruiter]
+      summary: List applicants for a recruiter's opportunity
+      parameters:
+        - in: query
+          name: opportunityId
+          required: true
+          schema: { type: string }
+        - in: query
+          name: search
+          schema: { type: string }
+        - in: query
+          name: stage
+          schema:
+            type: string
+            enum: [applied, under-review, shortlisted, interview, selected, rejected]
+      responses:
+        "200":
+          description: Applicant records
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Application"
+  /applications/{id}/stage:
+    patch:
+      operationId: updateApplicationStage
+      tags: [recruiter]
+      summary: Move an applicant to another recruitment stage
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApplicationStageInput"
+      responses:
+        "200":
+          description: Updated application
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Application"
+  /applications/{id}/interviews:
+    post:
+      operationId: scheduleInterview
+      tags: [recruiter]
+      summary: Schedule an interview for an applicant
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InterviewScheduleInput"
+      responses:
+        "200":
+          description: Scheduled interview
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Interview"
+        "400":
+          description: Invalid interview details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: Application is not managed by this recruiter
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /me/interviews:
+    get:
+      operationId: listMyInterviews
+      tags: [notifications]
+      summary: List upcoming interviews and assessments
+      responses:
+        "200":
+          description: Interview schedule
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Interview"
+  /me/notifications:
+    get:
+      operationId: listMyNotifications
+      tags: [notifications]
+      summary: List notifications for the current user
+      responses:
+        "200":
+          description: Recent notifications
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Notification"
+  /me/notifications/{id}/read:
+    patch:
+      operationId: markNotificationRead
+      tags: [notifications]
+      summary: Mark a notification as read
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "204":
+          description: Notification marked as read
+  /placement/students:
+    get:
+      operationId: listPlacementStudents
+      tags: [placement]
+      summary: Search students and review eligibility
+      parameters:
+        - in: query
+          name: search
+          schema: { type: string }
+        - in: query
+          name: department
+          schema: { type: string }
+        - in: query
+          name: eligibleFor
+          schema: { type: string }
+      responses:
+        "200":
+          description: Student directory
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/StudentProfile"
+  /placement/companies:
+    get:
+      operationId: listPlacementCompanies
+      tags: [placement]
+      summary: List and verify registered companies
+      responses:
+        "200":
+          description: Registered companies
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Company"
+  /placement/companies/{id}/verification:
+    patch:
+      operationId: updateCompanyVerification
+      tags: [placement]
+      summary: Approve or revoke a company's campus verification
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CompanyVerificationInput"
+      responses:
+        "200":
+          description: Updated company verification
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Company"
+        "404":
+          description: Company not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /placement/drives:
+    get:
+      operationId: listPlacementDrives
+      tags: [placement]
+      summary: List placement drives
+      responses:
+        "200":
+          description: Placement drives
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PlacementDrive"
+    post:
+      operationId: createPlacementDrive
+      tags: [placement]
+      summary: Schedule a placement drive
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PlacementDriveInput"
+      responses:
+        "201":
+          description: Created placement drive
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlacementDrive"
+  /placement/analytics:
+    get:
+      operationId: getPlacementAnalytics
+      tags: [placement]
+      summary: Department, package, and outcome analytics
+      responses:
+        "200":
+          description: Placement analytics based on sample records
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlacementAnalytics"
+  /admin/users:
+    get:
+      operationId: listAdminUsers
+      tags: [admin]
+      summary: List platform users for administration
+      parameters:
+        - in: query
+          name: search
+          schema: { type: string }
+        - in: query
+          name: role
+          schema:
+            type: string
+            enum: [student, recruiter, placement-officer, administrator]
+      responses:
+        "200":
+          description: Platform user directory
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PlatformUser"
+  /admin/users/{id}:
+    patch:
+      operationId: updateAdminUser
+      tags: [admin]
+      summary: Change a user's role or account status
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PlatformUserUpdate"
+      responses:
+        "200":
+          description: Updated account
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformUser"
+  /admin/audit:
+    get:
+      operationId: listAuditEvents
+      tags: [admin]
+      summary: Read the platform audit trail
+      responses:
+        "200":
+          description: Recent audit events
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AuditEvent"
+  /storage/uploads/request-url:
+    post:
+      operationId: requestUploadUrl
+      tags: [storage]
+      summary: Request a private resume upload URL
+      description: Returns a short-lived signed URL for a direct-to-storage resume upload.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UploadUrlRequest"
+      responses:
+        "200":
+          description: Presigned URL and private object path
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadUrlResponse"
+        "400":
+          description: Invalid resume metadata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "401":
+          description: Sign-in required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /me/resume:
+    post:
+      operationId: completeMyResumeUpload
+      tags: [student]
+      summary: Attach a completed resume upload to the signed-in profile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResumeUploadCompleteInput"
+      responses:
+        "200":
+          description: Resume attachment saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResumeAttachment"
+        "400":
+          description: Invalid or incomplete upload
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: The upload belongs to a different account
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /storage/public-objects/{filePath}:
+    get:
+      operationId: getPublicObject
+      tags: [storage]
+      summary: Serve a public app asset
+      parameters:
+        - in: path
+          name: filePath
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Public object bytes
+          content:
+            "*/*":
+              schema: { type: string, format: binary }
+        "404":
+          description: Object not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /storage/objects/{objectPath}:
+    get:
+      operationId: getPrivateObject
+      tags: [storage]
+      summary: Serve a private resume after an account-level access check
+      parameters:
+        - in: path
+          name: objectPath
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Private object bytes
+          content:
+            "*/*":
+              schema: { type: string, format: binary }
+        "401":
+          description: Sign-in required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: Resume access denied
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+components:
+  schemas:
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+      required:
+        - status
+    PublicStats:
+      type: object
+      required: [students, companies, placements, internships, sampleData]
+      properties:
+        students: { type: integer }
+        companies: { type: integer }
+        placements: { type: integer }
+        internships: { type: integer }
+        sampleData: { type: boolean }
+    Opportunity:
+      type: object
+      required: [id, title, company, companyId, location, mode, type, department, deadline, postedAt, status, skills, description, stipend]
+      properties:
+        id: { type: string }
+        title: { type: string }
+        company: { type: string }
+        companyId: { type: string }
+        companyLogo: { type: ["string", "null"] }
+        location: { type: string }
+        mode: { type: string, enum: [onsite, hybrid, remote] }
+        type: { type: string, enum: [internship, full-time] }
+        department: { type: string }
+        deadline: { type: string, format: date }
+        postedAt: { type: string, format: date }
+        status: { type: string, enum: [draft, published, closed, archived] }
+        skills:
+          type: array
+          items: { type: string }
+        description: { type: string }
+        stipend: { type: integer }
+        salary: { type: ["integer", "null"] }
+        duration: { type: ["string", "null"] }
+        applicants: { type: integer }
+        matchScore: { type: integer }
+        verified: { type: boolean }
+        eligibility: { type: string }
+        responsibilities:
+          type: array
+          items: { type: string }
+        requirements:
+          type: array
+          items: { type: string }
+        benefits:
+          type: array
+          items: { type: string }
+    OpportunityPage:
+      type: object
+      required: [items, total, page, pageSize]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Opportunity" }
+        total: { type: integer }
+        page: { type: integer }
+        pageSize: { type: integer }
+    OpportunityInput:
+      type: object
+      required: [title, company, location, mode, type, department, deadline, description, stipend]
+      properties:
+        title: { type: string, minLength: 3 }
+        company: { type: string, minLength: 2 }
+        location: { type: string }
+        mode: { type: string, enum: [onsite, hybrid, remote] }
+        type: { type: string, enum: [internship, full-time] }
+        department: { type: string }
+        deadline: { type: string, format: date }
+        description: { type: string }
+        stipend: { type: integer, minimum: 0 }
+        salary: { type: ["integer", "null"] }
+        duration: { type: ["string", "null"] }
+        skills:
+          type: array
+          items: { type: string }
+        eligibility: { type: string }
+        status: { type: string, enum: [draft, published] }
+    OpportunityUpdate:
+      type: object
+      properties:
+        title: { type: string, minLength: 3 }
+        location: { type: string }
+        mode: { type: string, enum: [onsite, hybrid, remote] }
+        type: { type: string, enum: [internship, full-time] }
+        department: { type: string }
+        deadline: { type: string, format: date }
+        description: { type: string }
+        stipend: { type: integer, minimum: 0 }
+        salary: { type: ["integer", "null"] }
+        duration: { type: ["string", "null"] }
+        skills:
+          type: array
+          items: { type: string }
+        eligibility: { type: string }
+        status: { type: string, enum: [draft, published, closed, archived] }
+    DashboardSummary:
+      type: object
+      required: [role, stats, activity, chart, sampleData]
+      properties:
+        role: { type: string }
+        stats:
+          type: array
+          items: { $ref: "#/components/schemas/DashboardStat" }
+        activity:
+          type: array
+          items: { $ref: "#/components/schemas/ActivityItem" }
+        chart:
+          type: array
+          items: { $ref: "#/components/schemas/ChartPoint" }
+        sampleData: { type: boolean }
+    DashboardStat:
+      type: object
+      required: [label, value, change]
+      properties:
+        label: { type: string }
+        value: { type: number }
+        change: { type: string }
+        suffix: { type: ["string", "null"] }
+    ActivityItem:
+      type: object
+      required: [id, title, detail, date, type]
+      properties:
+        id: { type: string }
+        title: { type: string }
+        detail: { type: string }
+        date: { type: string, format: date-time }
+        type: { type: string }
+        status: { type: ["string", "null"] }
+    ChartPoint:
+      type: object
+      required: [label, value]
+      properties:
+        label: { type: string }
+        value: { type: number }
+        secondary: { type: ["number", "null"] }
+    StudentProfile:
+      type: object
+      required: [id, name, email, department, degree, graduationYear, cgpa, backlogs, skills, certifications, projects, achievements, github, linkedin, portfolio, preferences, completion]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        email: { type: string, format: email }
+        department: { type: string }
+        degree: { type: string }
+        graduationYear: { type: integer }
+        cgpa: { type: number }
+        backlogs: { type: integer }
+        skills: { type: array, items: { type: string } }
+        certifications: { type: array, items: { type: string } }
+        projects: { type: array, items: { type: string } }
+        achievements: { type: array, items: { type: string } }
+        resumePath: { type: ["string", "null"] }
+        github: { type: string }
+        linkedin: { type: string }
+        portfolio: { type: string }
+        preferences: { type: array, items: { type: string } }
+        completion: { type: integer }
+    StudentProfileInput:
+      type: object
+      required: [name, department, degree, graduationYear, cgpa, backlogs, skills, certifications, projects, achievements, github, linkedin, portfolio, preferences]
+      properties:
+        name: { type: string, minLength: 2 }
+        department: { type: string }
+        degree: { type: string }
+        graduationYear: { type: integer }
+        cgpa: { type: number, minimum: 0, maximum: 10 }
+        backlogs: { type: integer, minimum: 0 }
+        skills: { type: array, items: { type: string } }
+        certifications: { type: array, items: { type: string } }
+        projects: { type: array, items: { type: string } }
+        achievements: { type: array, items: { type: string } }
+        github: { type: string }
+        linkedin: { type: string }
+        portfolio: { type: string }
+        preferences: { type: array, items: { type: string } }
+    Application:
+      type: object
+      required: [id, opportunityId, opportunityTitle, company, studentId, studentName, department, cgpa, appliedAt, stage, matchScore]
+      properties:
+        id: { type: string }
+        opportunityId: { type: string }
+        opportunityTitle: { type: string }
+        company: { type: string }
+        studentId: { type: string }
+        studentName: { type: string }
+        department: { type: string }
+        cgpa: { type: number }
+        appliedAt: { type: string, format: date-time }
+        stage: { type: string, enum: [applied, under-review, shortlisted, interview, selected, rejected] }
+        matchScore: { type: integer }
+        resumePath: { type: ["string", "null"] }
+        note: { type: ["string", "null"] }
+    ApplicationInput:
+      type: object
+      properties:
+        note: { type: string, maxLength: 1000 }
+    ApplicationStageInput:
+      type: object
+      required: [stage]
+      properties:
+        stage: { type: string, enum: [applied, under-review, shortlisted, interview, selected, rejected] }
+        note: { type: string }
+    Company:
+      type: object
+      required: [id, name, industry, location, website, description, verified, openRoles]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        industry: { type: string }
+        location: { type: string }
+        website: { type: string }
+        description: { type: string }
+        verified: { type: boolean }
+        openRoles: { type: integer }
+    CompanyInput:
+      type: object
+      required: [name, industry, location, website, description]
+      properties:
+        name: { type: string, minLength: 2 }
+        industry: { type: string }
+        location: { type: string }
+        website: { type: string }
+        description: { type: string }
+    CompanyVerificationInput:
+      type: object
+      required: [verified]
+      properties:
+        verified: { type: boolean }
+    InterviewScheduleInput:
+      type: object
+      required: [scheduledAt, kind, location]
+      properties:
+        scheduledAt: { type: string, format: date-time }
+        kind: { type: string, minLength: 2, maxLength: 80 }
+        location: { type: string, minLength: 2, maxLength: 240 }
+    Interview:
+      type: object
+      required: [id, opportunityTitle, company, studentName, scheduledAt, kind, status, location]
+      properties:
+        id: { type: string }
+        opportunityTitle: { type: string }
+        company: { type: string }
+        studentName: { type: string }
+        scheduledAt: { type: string, format: date-time }
+        kind: { type: string }
+        status: { type: string }
+        location: { type: string }
+    Notification:
+      type: object
+      required: [id, title, message, createdAt, read, type]
+      properties:
+        id: { type: string }
+        title: { type: string }
+        message: { type: string }
+        createdAt: { type: string, format: date-time }
+        read: { type: boolean }
+        type: { type: string }
+    PlacementDrive:
+      type: object
+      required: [id, company, title, date, location, status, opportunityId]
+      properties:
+        id: { type: string }
+        company: { type: string }
+        title: { type: string }
+        date: { type: string, format: date }
+        location: { type: string }
+        status: { type: string }
+        opportunityId: { type: string }
+    PlacementDriveInput:
+      type: object
+      required: [company, title, date, location, opportunityId]
+      properties:
+        company: { type: string }
+        title: { type: string }
+        date: { type: string, format: date }
+        location: { type: string }
+        opportunityId: { type: string }
+    PlacementAnalytics:
+      type: object
+      required: [departments, packages, outcomes, sampleData]
+      properties:
+        departments: { type: array, items: { $ref: "#/components/schemas/ChartPoint" } }
+        packages: { type: array, items: { $ref: "#/components/schemas/ChartPoint" } }
+        outcomes: { type: array, items: { $ref: "#/components/schemas/ChartPoint" } }
+        sampleData: { type: boolean }
+    PlatformUser:
+      type: object
+      required: [id, name, email, role, status, createdAt]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        email: { type: string, format: email }
+        role: { type: string, enum: [student, recruiter, placement-officer, administrator] }
+        status: { type: string, enum: [active, pending, inactive] }
+        createdAt: { type: string, format: date-time }
+    PlatformUserUpdate:
+      type: object
+      properties:
+        role: { type: string, enum: [student, recruiter, placement-officer, administrator] }
+        status: { type: string, enum: [active, pending, inactive] }
+    AuditEvent:
+      type: object
+      required: [id, actor, action, target, createdAt]
+      properties:
+        id: { type: string }
+        actor: { type: string }
+        action: { type: string }
+        target: { type: string }
+        createdAt: { type: string, format: date-time }
+        details: { type: ["string", "null"] }
+    UploadUrlRequest:
+      type: object
+      required: [name, size, contentType]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 180 }
+        size: { type: integer, minimum: 1, maximum: 10485760 }
+        contentType: { type: string, minLength: 1 }
+    UploadUrlResponse:
+      type: object
+      required: [uploadURL, objectPath, metadata]
+      properties:
+        uploadURL: { type: string, format: uri }
+        objectPath: { type: string }
+        metadata: { $ref: "#/components/schemas/UploadUrlRequest" }
+    ResumeUploadCompleteInput:
+      type: object
+      required: [objectPath]
+      properties:
+        objectPath: { type: string, minLength: 1 }
+    ResumeAttachment:
+      type: object
+      required: [objectPath, name, size, contentType, uploadedAt]
+      properties:
+        objectPath: { type: string }
+        name: { type: string }
+        size: { type: integer }
+        contentType: { type: string }
+        uploadedAt: { type: string, format: date-time }
+    ErrorEnvelope:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string }
+
