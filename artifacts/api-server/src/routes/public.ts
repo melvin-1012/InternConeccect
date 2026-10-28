@@ -61,29 +61,36 @@ function mapOpportunity(
   };
 }
 
-router.get("/public/stats", async (_req, res): Promise<void> => {
-  const [students] = await db
-    .select({ value: count() })
-    .from(studentProfilesTable);
-  const [companies] = await db.select({ value: count() }).from(companiesTable);
-  const [placements] = await db
-    .select({ value: count() })
-    .from(applicationsTable)
-    .where(eq(applicationsTable.stage, "selected"));
-  const [internships] = await db
-    .select({ value: count() })
-    .from(opportunitiesTable)
-    .where(and(eq(opportunitiesTable.type, "internship"), eq(opportunitiesTable.status, "published")));
+let cachedPublicStats: { data: unknown; expiresAt: number } | null = null;
 
-  res.json(
-    GetPublicStatsResponse.parse({
-      students: Number(students.value),
-      companies: Number(companies.value),
-      placements: Number(placements.value),
-      internships: Number(internships.value),
-      sampleData: true,
-    }),
-  );
+router.get("/public/stats", async (_req, res): Promise<void> => {
+  if (cachedPublicStats && Date.now() < cachedPublicStats.expiresAt) {
+    res.json(cachedPublicStats.data);
+    return;
+  }
+
+  const [
+    [students],
+    [companies],
+    [placements],
+    [internships],
+  ] = await Promise.all([
+    db.select({ value: count() }).from(studentProfilesTable),
+    db.select({ value: count() }).from(companiesTable),
+    db.select({ value: count() }).from(applicationsTable).where(eq(applicationsTable.stage, "selected")),
+    db.select({ value: count() }).from(opportunitiesTable).where(and(eq(opportunitiesTable.type, "internship"), eq(opportunitiesTable.status, "published"))),
+  ]);
+
+  const data = GetPublicStatsResponse.parse({
+    students: Number(students?.value ?? 0),
+    companies: Number(companies?.value ?? 0),
+    placements: Number(placements?.value ?? 0),
+    internships: Number(internships?.value ?? 0),
+    sampleData: true,
+  });
+
+  cachedPublicStats = { data, expiresAt: Date.now() + 30_000 };
+  res.json(data);
 });
 
 router.get("/opportunities", async (req, res): Promise<void> => {
