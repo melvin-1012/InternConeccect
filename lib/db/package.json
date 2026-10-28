@@ -12,14 +12,18 @@
     "push-force": "drizzle-kit push --force --config ./drizzle.config.ts"
   },
   "dependencies": {
+    "@neondatabase/serverless": "^1.2.0",
     "drizzle-orm": "catalog:",
     "drizzle-zod": "^0.8.3",
     "pg": "^8.23.0",
+    "undici": "^8.12.3",
+    "ws": "^8.22.0",
     "zod": "catalog:"
   },
   "devDependencies": {
     "@types/node": "catalog:",
     "@types/pg": "^8.23.1",
+    "@types/ws": "^8.18.2",
     "drizzle-kit": "^0.31.10"
   }
 }
