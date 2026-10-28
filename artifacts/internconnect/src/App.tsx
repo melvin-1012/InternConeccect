@@ -50,7 +50,17 @@ import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import NotFound from '@/pages/not-found';
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 1000 * 60 * 5, // 5 minutes: loads instantly on click without loading skeletons
+      gcTime: 1000 * 60 * 30, // 30 minutes in memory
+      refetchOnWindowFocus: false, // Prevents reloading on tab focus
+      refetchOnMount: false, // Uses warm cache immediately
+      retry: 1,
+    },
+  },
+});
 type Role = 'student' | 'recruiter' | 'placement-officer' | 'administrator';
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, '');
 const clerkPubKey = publishableKeyFromHost(window.location.hostname, import.meta.env.VITE_CLERK_PUBLISHABLE_KEY);
