@@ -11,8 +11,7 @@ const NEON_IPS = ["18.189.49.143", "3.18.239.121", "3.141.122.14"];
 const origLookup = dns.lookup;
 
 // Intercept DNS lookups for Neon to prevent ENOTFOUND on Windows/ISP networks
-// @ts-expect-error monkey-patching for DNS reliability
-dns.lookup = function (hostname, options, callback) {
+(dns as any).lookup = function (hostname: string, options: any, callback: any) {
   if (typeof options === "function") {
     callback = options;
     options = {};
@@ -23,7 +22,7 @@ dns.lookup = function (hostname, options, callback) {
     }
     return callback(null, NEON_IPS[0], 4);
   }
-  return origLookup.call(dns, hostname, options, callback);
+  return (origLookup as any).call(dns, hostname, options, callback);
 };
 
 try {
@@ -71,8 +70,10 @@ export const pool = !isNeon
     })
   : null;
 
-export const db: any = isNeon
+import type { NodePgDatabase } from "drizzle-orm/node-postgres";
+
+export const db: NodePgDatabase<typeof schema> = (isNeon
   ? drizzleNeon(neon(dbUrl), { schema })
-  : drizzlePg(pool!, { schema });
+  : drizzlePg(pool!, { schema })) as unknown as NodePgDatabase<typeof schema>;
 
 export * from "./schema";
