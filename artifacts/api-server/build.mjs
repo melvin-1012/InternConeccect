@@ -118,6 +118,15 @@ globalThis.__dirname = __bannerPath.dirname(globalThis.__filename);
     `,
     },
   });
+
+  const clientDist = path.resolve(artifactDir, "../internconnect/dist/public");
+  const serverPublic = path.resolve(distDir, "public");
+  const { existsSync } = await import("node:fs");
+  const { cp } = await import("node:fs/promises");
+  if (existsSync(clientDist)) {
+    await cp(clientDist, serverPublic, { recursive: true });
+    console.log("Successfully copied frontend bundle to api-server/dist/public");
+  }
 }
 
 buildAll().catch((err) => {
