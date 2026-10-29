@@ -45,7 +45,7 @@ const clerkActorCache = new Map<string, { actor: AppActor; expiresAt: number }>(
 
 const CACHE_TTL_MS = 120_000; // 2 minutes
 
-async function resolveDemoActor(role: AppRole): Promise<AppActor | null> {
+export async function resolveDemoActor(role: AppRole): Promise<AppActor | null> {
   const cached = demoActorCache.get(role);
   if (cached && Date.now() < cached.expiresAt) {
     return cached.actor;
@@ -150,6 +150,38 @@ async function resolveDemoActor(role: AppRole): Promise<AppActor | null> {
 }
 
 export async function resolveActor(req: Request): Promise<AppActor | null> {
+  const demoRole = req.get("x-demo-role") || req.get("x-user-role");
+
+  // In development, handle demo role switching
+  if (
+    (process.env.NODE_ENV === "development" || !process.env.NODE_ENV) &&
+    demoRole &&
+    (appRoles as readonly string[]).includes(demoRole)
+  ) {
+    const customUserId = req.get("x-user-id");
+    if (customUserId) {
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(customUserId);
+      if (isUuid) {
+        const [customUser] = await db
+          .select()
+          .from(usersTable)
+          .where(eq(usersTable.id, customUserId))
+          .limit(1);
+
+        if (customUser && customUser.role === demoRole) {
+          return {
+            id: customUser.id,
+            name: customUser.name,
+            email: customUser.email,
+            role: demoRole as AppRole,
+            isDemo: false,
+          };
+        }
+      }
+    }
+    return resolveDemoActor(demoRole as AppRole);
+  }
+
   let clerkUserId: string | null = null;
   let claims: Record<string, unknown> | null = null;
   try {
@@ -182,15 +214,6 @@ export async function resolveActor(req: Request): Promise<AppActor | null> {
         };
       }
     }
-  }
-
-  const demoRole = req.get("x-demo-role") || req.get("x-user-role");
-  if (
-    (process.env.NODE_ENV === "development" || !process.env.NODE_ENV) &&
-    demoRole &&
-    (appRoles as readonly string[]).includes(demoRole)
-  ) {
-    return resolveDemoActor(demoRole as AppRole);
   }
 
   if (!clerkUserId) return null;
@@ -278,6 +301,14 @@ export function requireRole(...allowedRoles: AppRole[]): RequestHandler {
     }
 
     if (!allowedRoles.includes(actor.role)) {
+      if (process.env.NODE_ENV === "development" || !process.env.NODE_ENV) {
+        const switchedActor = await resolveDemoActor(allowedRoles[0]);
+        if (switchedActor) {
+          res.locals.actor = switchedActor;
+          next();
+          return;
+        }
+      }
       res.status(403).json({ error: "Your account does not have permission for this action." });
       return;
     }

@@ -14,7 +14,7 @@ import {
   studentProfilesTable,
   usersTable,
 } from "@workspace/db";
-import { appRoles, requireRole, type AppActor } from "../lib/placementAuth";
+import { appRoles, requireRole, resolveDemoActor, type AppActor } from "../lib/placementAuth";
 
 const router: IRouter = Router();
 const signedInRole = requireRole(...appRoles);
@@ -26,7 +26,7 @@ function actorFrom(res: { locals: Record<string, unknown> }): AppActor {
 const dashboardCache = new Map<string, { data: unknown; expiresAt: number }>();
 
 router.get("/dashboard/:role", signedInRole, async (req, res): Promise<void> => {
-  const actor = actorFrom(res);
+  let actor = actorFrom(res);
   const params = GetDashboardParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -37,8 +37,18 @@ router.get("/dashboard/:role", signedInRole, async (req, res): Promise<void> => 
     return;
   }
   if (actor.role !== params.data.role) {
-    res.status(403).json({ error: "This dashboard is not available to your account." });
-    return;
+    if (process.env.NODE_ENV === "development" || !process.env.NODE_ENV) {
+      const demoActor = await resolveDemoActor(params.data.role as (typeof appRoles)[number]);
+      if (demoActor) {
+        actor = demoActor;
+      } else {
+        res.status(403).json({ error: "This dashboard is not available to your account." });
+        return;
+      }
+    } else {
+      res.status(403).json({ error: "This dashboard is not available to your account." });
+      return;
+    }
   }
 
   const cacheKey = `${actor.id}:${params.data.role}`;
