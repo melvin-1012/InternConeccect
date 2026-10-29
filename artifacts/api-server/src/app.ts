@@ -1,4 +1,6 @@
 import express, { type Express } from "express";
+import path from "path";
+import fs from "fs";
 import cors from "cors";
 import { clerkMiddleware } from "@clerk/express";
 import { publishableKeyFromHost } from "@clerk/shared/keys";
@@ -51,5 +53,22 @@ app.get("/healthz", (_req, res) => {
 });
 
 app.use("/api", router);
+
+const possibleStaticDirs = [
+  path.resolve(process.cwd(), "artifacts/internconnect/dist/public"),
+  path.resolve(process.cwd(), "../internconnect/dist/public"),
+  path.resolve(process.cwd(), "dist/public"),
+];
+const staticDir = possibleStaticDirs.find((dir) => fs.existsSync(dir));
+
+if (staticDir) {
+  app.use(express.static(staticDir));
+  app.get("*", (req, res, next) => {
+    if (req.path.startsWith("/api") || req.path === "/healthz") {
+      return next();
+    }
+    res.sendFile(path.join(staticDir, "index.html"));
+  });
+}
 
 export default app;
