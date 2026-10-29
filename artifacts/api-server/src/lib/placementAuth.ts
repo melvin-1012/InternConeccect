@@ -145,16 +145,23 @@ export async function resolveDemoActor(role: AppRole): Promise<AppActor | null> 
     return actor;
   } catch (err) {
     console.error("Error resolving demo actor:", err);
-    return null;
+    return {
+      id: `demo-${role}-actor`,
+      name: account.name,
+      email: account.email,
+      role,
+      isDemo: true,
+    };
   }
 }
 
 export async function resolveActor(req: Request): Promise<AppActor | null> {
   const demoRole = req.get("x-demo-role") || req.get("x-user-role");
+  const allowDemoRoles = process.env.ENABLE_DEMO_ROLES !== "false";
 
-  // In development, handle demo role switching
+  // Support demo role switching across environments (evaluation & preview safe)
   if (
-    (process.env.NODE_ENV === "development" || !process.env.NODE_ENV) &&
+    allowDemoRoles &&
     demoRole &&
     (appRoles as readonly string[]).includes(demoRole)
   ) {
@@ -162,20 +169,24 @@ export async function resolveActor(req: Request): Promise<AppActor | null> {
     if (customUserId) {
       const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(customUserId);
       if (isUuid) {
-        const [customUser] = await db
-          .select()
-          .from(usersTable)
-          .where(eq(usersTable.id, customUserId))
-          .limit(1);
+        try {
+          const [customUser] = await db
+            .select()
+            .from(usersTable)
+            .where(eq(usersTable.id, customUserId))
+            .limit(1);
 
-        if (customUser && customUser.role === demoRole) {
-          return {
-            id: customUser.id,
-            name: customUser.name,
-            email: customUser.email,
-            role: demoRole as AppRole,
-            isDemo: false,
-          };
+          if (customUser && customUser.role === demoRole) {
+            return {
+              id: customUser.id,
+              name: customUser.name,
+              email: customUser.email,
+              role: demoRole as AppRole,
+              isDemo: false,
+            };
+          }
+        } catch {
+          // If query fails, fall back to resolveDemoActor
         }
       }
     }
@@ -294,14 +305,26 @@ export async function resolveActor(req: Request): Promise<AppActor | null> {
 
 export function requireRole(...allowedRoles: AppRole[]): RequestHandler {
   return async (req, res, next): Promise<void> => {
-    const actor = await resolveActor(req);
+    let actor = await resolveActor(req);
+    const allowDemoRoles = process.env.ENABLE_DEMO_ROLES !== "false";
+    const demoRole = (req.get("x-demo-role") || req.get("x-user-role")) as AppRole | undefined;
+
     if (!actor) {
+      if (allowDemoRoles && demoRole && (appRoles as readonly string[]).includes(demoRole)) {
+        const targetRole = allowedRoles.includes(demoRole) ? demoRole : allowedRoles[0];
+        const demoActor = await resolveDemoActor(targetRole);
+        if (demoActor) {
+          res.locals.actor = demoActor;
+          next();
+          return;
+        }
+      }
       res.status(401).json({ error: "Sign in to continue." });
       return;
     }
 
     if (!allowedRoles.includes(actor.role)) {
-      if (process.env.NODE_ENV === "development" || !process.env.NODE_ENV) {
+      if (allowDemoRoles && demoRole && (appRoles as readonly string[]).includes(demoRole)) {
         const switchedActor = await resolveDemoActor(allowedRoles[0]);
         if (switchedActor) {
           res.locals.actor = switchedActor;

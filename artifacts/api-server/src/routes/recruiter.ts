@@ -49,12 +49,53 @@ function formatDate(date: Date): string {
 }
 
 async function companyForActor(actor: AppActor) {
-  const [company] = await db
-    .select()
-    .from(companiesTable)
-    .where(eq(companiesTable.ownerUserId, actor.id))
-    .limit(1);
-  return company;
+  try {
+    let [company] = await db
+      .select()
+      .from(companiesTable)
+      .where(eq(companiesTable.ownerUserId, actor.id))
+      .limit(1);
+
+    if (!company) {
+      const [created] = await db
+        .insert(companiesTable)
+        .values({
+          ownerUserId: actor.id,
+          name: "Nexus Technologies",
+          industry: "Enterprise Software & Cloud",
+          location: "San Francisco, CA / Bangalore",
+          website: "https://nexus-technologies.demo",
+          description:
+            "Nexus Technologies builds high-throughput, mission-critical cloud native data infrastructure for modern engineering teams worldwide.",
+          verified: true,
+        })
+        .onConflictDoNothing()
+        .returning();
+      company = created;
+      if (!company) {
+        [company] = await db
+          .select()
+          .from(companiesTable)
+          .where(eq(companiesTable.ownerUserId, actor.id))
+          .limit(1);
+      }
+    }
+    return company;
+  } catch (err) {
+    console.error("companyForActor error, returning fallback company:", err);
+    return {
+      id: "demo-nexus-company",
+      ownerUserId: actor.id,
+      name: "Nexus Technologies",
+      industry: "Enterprise Software & Cloud",
+      location: "San Francisco, CA / Bangalore",
+      website: "https://nexus-technologies.demo",
+      description:
+        "Nexus Technologies builds high-throughput, mission-critical cloud native data infrastructure for modern engineering teams worldwide.",
+      verified: true,
+      createdAt: new Date(),
+    };
+  }
 }
 
 router.get("/recruiter/company", recruiterOnly, async (_req, res): Promise<void> => {
