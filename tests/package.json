@@ -1,0 +1,14 @@
+{
+  "name": "internconnect-tests",
+  "version": "1.0.0",
+  "description": "Selenium tests for InternConnect",
+  "scripts": {
+    "test:selenium": "mocha tests/selenium/*.e2e.js --timeout 60000"
+  },
+  "devDependencies": {
+    "chai": "^4.3.10",
+    "chromedriver": "^119.0.1",
+    "mocha": "^10.2.0",
+    "selenium-webdriver": "^4.15.0"
+  }
+}
