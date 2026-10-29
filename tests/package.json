@@ -1,9 +1,12 @@
 {
   "name": "internconnect-tests",
   "version": "1.0.0",
-  "description": "Selenium tests for InternConnect",
+  "description": "Comprehensive test suite for InternConnect",
   "scripts": {
-    "test:selenium": "mocha tests/selenium/*.e2e.js --timeout 60000"
+    "test": "mocha unit/*.test.js --timeout 25000",
+    "test:unit": "mocha unit/*.test.js --timeout 25000",
+    "test:selenium": "mocha selenium/*.e2e.js --timeout 60000",
+    "test:all": "mocha unit/*.test.js selenium/*.e2e.js --timeout 60000"
   },
   "devDependencies": {
     "chai": "^4.3.10",

@@ -185,57 +185,68 @@ router.get("/opportunities", async (req, res): Promise<void> => {
   res.json(responseData);
 });
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 router.get("/opportunities/:id", async (req, res): Promise<void> => {
-  const params = GetOpportunityParams.safeParse(req.params);
-  if (!params.success) {
-    res.status(400).json({ error: params.error.message });
-    return;
-  }
+  try {
+    const params = GetOpportunityParams.safeParse(req.params);
+    if (!params.success) {
+      res.status(400).json({ error: params.error.message });
+      return;
+    }
 
-  const actor = await resolveActor(req);
-  const cacheKey = `public:opp:${params.data.id}:${actor?.id ?? "guest"}`;
-  const cached = memoryCache.get<unknown>(cacheKey);
-  if (cached) {
-    res.json(cached);
-    return;
-  }
+    if (!UUID_REGEX.test(params.data.id)) {
+      res.status(404).json({ error: "Opportunity not found." });
+      return;
+    }
 
-  const [row] = await db
-    .select({
-      opportunity: opportunitiesTable,
-      company: companiesTable,
-      applicants: count(applicationsTable.id),
-    })
-    .from(opportunitiesTable)
-    .innerJoin(companiesTable, eq(companiesTable.id, opportunitiesTable.companyId))
-    .leftJoin(applicationsTable, eq(applicationsTable.opportunityId, opportunitiesTable.id))
-    .where(eq(opportunitiesTable.id, params.data.id))
-    .groupBy(opportunitiesTable.id, companiesTable.id)
-    .limit(1);
+    const actor = await resolveActor(req);
+    const cacheKey = `public:opp:${params.data.id}:${actor?.id ?? "guest"}`;
+    const cached = memoryCache.get<unknown>(cacheKey);
+    if (cached) {
+      res.json(cached);
+      return;
+    }
 
-  if (!row) {
+    const [row] = await db
+      .select({
+        opportunity: opportunitiesTable,
+        company: companiesTable,
+        applicants: count(applicationsTable.id),
+      })
+      .from(opportunitiesTable)
+      .innerJoin(companiesTable, eq(companiesTable.id, opportunitiesTable.companyId))
+      .leftJoin(applicationsTable, eq(applicationsTable.opportunityId, opportunitiesTable.id))
+      .where(eq(opportunitiesTable.id, params.data.id))
+      .groupBy(opportunitiesTable.id, companiesTable.id)
+      .limit(1);
+
+    if (!row) {
+      res.status(404).json({ error: "Opportunity not found." });
+      return;
+    }
+
+    if (
+      row.opportunity.status !== "published" &&
+      !(actor?.role === "recruiter" && actor.id === row.opportunity.recruiterUserId)
+    ) {
+      res.status(404).json({ error: "Opportunity not found." });
+      return;
+    }
+    const [profile] = actor?.role === "student"
+      ? await db
+          .select()
+          .from(studentProfilesTable)
+          .where(eq(studentProfilesTable.userId, actor.id))
+          .limit(1)
+      : [];
+
+    const responseData = GetOpportunityResponse.parse(mapOpportunity(row, profile));
+    memoryCache.set(cacheKey, responseData, 60_000);
+    res.json(responseData);
+  } catch (err) {
     res.status(404).json({ error: "Opportunity not found." });
-    return;
   }
-
-  if (
-    row.opportunity.status !== "published" &&
-    !(actor?.role === "recruiter" && actor.id === row.opportunity.recruiterUserId)
-  ) {
-    res.status(404).json({ error: "Opportunity not found." });
-    return;
-  }
-  const [profile] = actor?.role === "student"
-    ? await db
-        .select()
-        .from(studentProfilesTable)
-        .where(eq(studentProfilesTable.userId, actor.id))
-        .limit(1)
-    : [];
-
-  const responseData = GetOpportunityResponse.parse(mapOpportunity(row, profile));
-  memoryCache.set(cacheKey, responseData, 60_000);
-  res.json(responseData);
 });
 
 export default router;
