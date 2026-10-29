@@ -28,6 +28,7 @@ import {
 } from "@workspace/db";
 import { requireRole, type AppActor } from "../lib/placementAuth";
 import { updateStudentProfileCompletion } from "../lib/placementData";
+import { memoryCache } from "../lib/memoryCache";
 
 const router: IRouter = Router();
 const studentOnly = requireRole("student");
@@ -38,6 +39,13 @@ function actorFrom(res: Parameters<typeof studentOnly>[1]): AppActor {
 
 router.get("/me/profile", studentOnly, async (_req, res): Promise<void> => {
   const actor = actorFrom(res);
+  const cacheKey = `student:profile:${actor.id}`;
+  const cached = memoryCache.get<unknown>(cacheKey);
+  if (cached) {
+    res.json(cached);
+    return;
+  }
+
   const [user] = await db
     .select()
     .from(usersTable)
@@ -54,16 +62,17 @@ router.get("/me/profile", studentOnly, async (_req, res): Promise<void> => {
     return;
   }
 
-  res.json(
-    GetMyProfileResponse.parse({
-      name: user.name,
-      email: user.email,
-      ...profile,
-      id: user.id,
-      userId: undefined,
-      completion: updateStudentProfileCompletion(profile),
-    }),
-  );
+  const responseData = GetMyProfileResponse.parse({
+    name: user.name,
+    email: user.email,
+    ...profile,
+    id: user.id,
+    userId: undefined,
+    completion: updateStudentProfileCompletion(profile),
+  });
+
+  memoryCache.set(cacheKey, responseData, 120_000);
+  res.json(responseData);
 });
 
 router.put("/me/profile", studentOnly, async (req, res): Promise<void> => {
@@ -90,20 +99,31 @@ router.put("/me/profile", studentOnly, async (req, res): Promise<void> => {
     })
     .returning();
 
-  res.json(
-    UpdateMyProfileResponse.parse({
-      name: user.name,
-      email: user.email,
-      ...profile,
-      id: user.id,
-      userId: undefined,
-      completion: updateStudentProfileCompletion(profile),
-    }),
-  );
+  memoryCache.invalidate(`student:profile:${actor.id}`);
+  memoryCache.invalidate("placement:students");
+
+  const responseData = UpdateMyProfileResponse.parse({
+    name: user.name,
+    email: user.email,
+    ...profile,
+    id: user.id,
+    userId: undefined,
+    completion: updateStudentProfileCompletion(profile),
+  });
+
+  memoryCache.set(`student:profile:${actor.id}`, responseData, 120_000);
+  res.json(responseData);
 });
 
 router.get("/me/applications", studentOnly, async (_req, res): Promise<void> => {
   const actor = actorFrom(res);
+  const cacheKey = `student:apps:${actor.id}`;
+  const cached = memoryCache.get<unknown>(cacheKey);
+  if (cached) {
+    res.json(cached);
+    return;
+  }
+
   const rows = await db
     .select({
       application: applicationsTable,
@@ -120,25 +140,26 @@ router.get("/me/applications", studentOnly, async (_req, res): Promise<void> => 
     .where(eq(applicationsTable.studentUserId, actor.id))
     .orderBy(desc(applicationsTable.appliedAt));
 
-  res.json(
-    ListMyApplicationsResponse.parse(
-      rows.map(({ application, opportunity, company, student, profile }) => ({
-        id: application.id,
-        opportunityId: opportunity.id,
-        opportunityTitle: opportunity.title,
-        company: company.name,
-        studentId: student.id,
-        studentName: student.name,
-        department: profile?.department ?? "Unspecified",
-        cgpa: profile?.cgpa ?? 0,
-        appliedAt: application.appliedAt,
-        stage: application.stage,
-        matchScore: application.matchScore,
-        resumePath: profile?.resumePath ?? null,
-        note: application.note,
-      })),
-    ),
+  const responseData = ListMyApplicationsResponse.parse(
+    rows.map(({ application, opportunity, company, student, profile }) => ({
+      id: application.id,
+      opportunityId: opportunity.id,
+      opportunityTitle: opportunity.title,
+      company: company.name,
+      studentId: student.id,
+      studentName: student.name,
+      department: profile?.department ?? "Unspecified",
+      cgpa: profile?.cgpa ?? 0,
+      appliedAt: application.appliedAt,
+      stage: application.stage,
+      matchScore: application.matchScore,
+      resumePath: profile?.resumePath ?? null,
+      note: application.note,
+    })),
   );
+
+  memoryCache.set(cacheKey, responseData, 120_000);
+  res.json(responseData);
 });
 
 router.post(
@@ -224,6 +245,13 @@ router.post(
       type: "application",
     });
 
+    memoryCache.invalidate(`student:apps:${actor.id}`);
+    memoryCache.invalidate(`dashboard:${actor.id}`);
+    memoryCache.invalidate(`student:notifs:${actor.id}`);
+    memoryCache.invalidate("recruiter:applicants");
+    memoryCache.invalidate("public:opps");
+    memoryCache.invalidate("public:stats");
+
     res.status(201).json(
       ApplyToOpportunityResponse.parse({
         id: application.id,
@@ -246,6 +274,13 @@ router.post(
 
 router.get("/me/saved-opportunities", studentOnly, async (_req, res): Promise<void> => {
   const actor = actorFrom(res);
+  const cacheKey = `student:saved:${actor.id}`;
+  const cached = memoryCache.get<unknown>(cacheKey);
+  if (cached) {
+    res.json(cached);
+    return;
+  }
+
   const rows = await db
     .select({
       opportunity: opportunitiesTable,
@@ -258,36 +293,37 @@ router.get("/me/saved-opportunities", studentOnly, async (_req, res): Promise<vo
     .where(eq(savedOpportunitiesTable.studentUserId, actor.id))
     .orderBy(desc(savedOpportunitiesTable.createdAt));
 
-  res.json(
-    ListSavedOpportunitiesResponse.parse(
-      rows.map(({ opportunity, company }) => ({
-        id: opportunity.id,
-        title: opportunity.title,
-        company: company.name,
-        companyId: company.id,
-        companyLogo: null,
-        location: opportunity.location,
-        mode: opportunity.mode,
-        type: opportunity.type,
-        department: opportunity.department,
-        deadline: opportunity.deadline,
-        postedAt: opportunity.postedAt,
-        status: opportunity.status,
-        skills: opportunity.skills,
-        description: opportunity.description,
-        stipend: opportunity.stipend,
-        salary: opportunity.salary,
-        duration: opportunity.duration,
-        applicants: 0,
-        matchScore: 72,
-        verified: company.verified,
-        eligibility: opportunity.eligibility,
-        responsibilities: opportunity.responsibilities,
-        requirements: opportunity.requirements,
-        benefits: opportunity.benefits,
-      })),
-    ),
+  const responseData = ListSavedOpportunitiesResponse.parse(
+    rows.map(({ opportunity, company }) => ({
+      id: opportunity.id,
+      title: opportunity.title,
+      company: company.name,
+      companyId: company.id,
+      companyLogo: null,
+      location: opportunity.location,
+      mode: opportunity.mode,
+      type: opportunity.type,
+      department: opportunity.department,
+      deadline: opportunity.deadline,
+      postedAt: opportunity.postedAt,
+      status: opportunity.status,
+      skills: opportunity.skills,
+      description: opportunity.description,
+      stipend: opportunity.stipend,
+      salary: opportunity.salary,
+      duration: opportunity.duration,
+      applicants: 0,
+      matchScore: 72,
+      verified: company.verified,
+      eligibility: opportunity.eligibility,
+      responsibilities: opportunity.responsibilities,
+      requirements: opportunity.requirements,
+      benefits: opportunity.benefits,
+    })),
   );
+
+  memoryCache.set(cacheKey, responseData, 120_000);
+  res.json(responseData);
 });
 
 router.put("/me/saved-opportunities/:id", studentOnly, async (req, res): Promise<void> => {
@@ -312,6 +348,8 @@ router.put("/me/saved-opportunities/:id", studentOnly, async (req, res): Promise
     .insert(savedOpportunitiesTable)
     .values({ opportunityId: params.data.id, studentUserId: actor.id })
     .onConflictDoNothing();
+
+  memoryCache.invalidate(`student:saved:${actor.id}`);
   res.sendStatus(204);
 });
 
@@ -330,11 +368,20 @@ router.delete("/me/saved-opportunities/:id", studentOnly, async (req, res): Prom
         eq(savedOpportunitiesTable.studentUserId, actor.id),
       ),
     );
+
+  memoryCache.invalidate(`student:saved:${actor.id}`);
   res.sendStatus(204);
 });
 
 router.get("/me/interviews", studentOnly, async (_req, res): Promise<void> => {
   const actor = actorFrom(res);
+  const cacheKey = `student:interviews:${actor.id}`;
+  const cached = memoryCache.get<unknown>(cacheKey);
+  if (cached) {
+    res.json(cached);
+    return;
+  }
+
   const rows = await db
     .select({
       interview: interviewsTable,
@@ -350,41 +397,51 @@ router.get("/me/interviews", studentOnly, async (_req, res): Promise<void> => {
     .where(eq(applicationsTable.studentUserId, actor.id))
     .orderBy(interviewsTable.scheduledAt);
 
-  res.json(
-    ListMyInterviewsResponse.parse(
-      rows.map(({ interview, opportunity, company, student }) => ({
-        id: interview.id,
-        opportunityTitle: opportunity.title,
-        company: company.name,
-        studentName: student.name,
-        scheduledAt: interview.scheduledAt,
-        kind: interview.kind,
-        status: interview.status,
-        location: interview.location,
-      })),
-    ),
+  const responseData = ListMyInterviewsResponse.parse(
+    rows.map(({ interview, opportunity, company, student }) => ({
+      id: interview.id,
+      opportunityTitle: opportunity.title,
+      company: company.name,
+      studentName: student.name,
+      scheduledAt: interview.scheduledAt,
+      kind: interview.kind,
+      status: interview.status,
+      location: interview.location,
+    })),
   );
+
+  memoryCache.set(cacheKey, responseData, 120_000);
+  res.json(responseData);
 });
 
 router.get("/me/notifications", studentOnly, async (_req, res): Promise<void> => {
   const actor = actorFrom(res);
+  const cacheKey = `student:notifs:${actor.id}`;
+  const cached = memoryCache.get<unknown>(cacheKey);
+  if (cached) {
+    res.json(cached);
+    return;
+  }
+
   const items = await db
     .select()
     .from(notificationsTable)
     .where(eq(notificationsTable.userId, actor.id))
     .orderBy(desc(notificationsTable.createdAt));
-  res.json(
-    ListMyNotificationsResponse.parse(
-      items.map((item) => ({
-        id: item.id,
-        title: item.title,
-        message: item.message,
-        createdAt: item.createdAt,
-        read: item.read,
-        type: item.type,
-      })),
-    ),
+
+  const responseData = ListMyNotificationsResponse.parse(
+    items.map((item) => ({
+      id: item.id,
+      title: item.title,
+      message: item.message,
+      createdAt: item.createdAt,
+      read: item.read,
+      type: item.type,
+    })),
   );
+
+  memoryCache.set(cacheKey, responseData, 60_000);
+  res.json(responseData);
 });
 
 router.patch("/me/notifications/:id/read", studentOnly, async (req, res): Promise<void> => {
@@ -403,6 +460,8 @@ router.patch("/me/notifications/:id/read", studentOnly, async (req, res): Promis
         eq(notificationsTable.userId, actor.id),
       ),
     );
+
+  memoryCache.invalidate(`student:notifs:${actor.id}`);
   res.sendStatus(204);
 });
 

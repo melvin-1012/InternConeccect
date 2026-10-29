@@ -23,6 +23,8 @@ function actorFrom(res: { locals: Record<string, unknown> }): AppActor {
   return res.locals.actor as AppActor;
 }
 
+const dashboardCache = new Map<string, { data: unknown; expiresAt: number }>();
+
 router.get("/dashboard/:role", signedInRole, async (req, res): Promise<void> => {
   const actor = actorFrom(res);
   const params = GetDashboardParams.safeParse(req.params);
@@ -39,6 +41,13 @@ router.get("/dashboard/:role", signedInRole, async (req, res): Promise<void> => 
     return;
   }
 
+  const cacheKey = `${actor.id}:${params.data.role}`;
+  const cached = dashboardCache.get(cacheKey);
+  if (cached && Date.now() < cached.expiresAt) {
+    res.json(cached.data);
+    return;
+  }
+
   let stats: Array<{ label: string; value: number; change: string; suffix?: string }> = [];
   let activity: Array<{
     id: string;
@@ -51,42 +60,19 @@ router.get("/dashboard/:role", signedInRole, async (req, res): Promise<void> => 
   let chart: Array<{ label: string; value: number; secondary?: number }> = [];
 
   if (actor.role === "student") {
-    const [totalApplications] = await db
-      .select({ value: count() })
-      .from(applicationsTable)
-      .where(eq(applicationsTable.studentUserId, actor.id));
-    const [interviewCount] = await db
-      .select({ value: count(interviewsTable.id) })
-      .from(interviewsTable)
-      .innerJoin(applicationsTable, eq(applicationsTable.id, interviewsTable.applicationId))
-      .where(eq(applicationsTable.studentUserId, actor.id));
-    const [shortlisted] = await db
-      .select({ value: count() })
-      .from(applicationsTable)
-      .where(
-        and(
-          eq(applicationsTable.studentUserId, actor.id),
-          eq(applicationsTable.stage, "shortlisted"),
-        ),
-      );
-    const [selected] = await db
-      .select({ value: count() })
-      .from(applicationsTable)
-      .where(
-        and(
-          eq(applicationsTable.studentUserId, actor.id),
-          eq(applicationsTable.stage, "selected"),
-        ),
-      );
-
-    stats = [
-      { label: "Applications", value: Number(totalApplications.value), change: "This season" },
-      { label: "Interviews", value: Number(interviewCount.value), change: "Scheduled" },
-      { label: "Shortlisted", value: Number(shortlisted.value), change: "In progress" },
-      { label: "Offers", value: Number(selected.value), change: "Received" },
-    ];
-    const rows = await db
-      .select({
+    const [
+      [totalApplications],
+      [interviewCount],
+      [shortlisted],
+      [selected],
+      rows,
+      stageCounts,
+    ] = await Promise.all([
+      db.select({ value: count() }).from(applicationsTable).where(eq(applicationsTable.studentUserId, actor.id)),
+      db.select({ value: count(interviewsTable.id) }).from(interviewsTable).innerJoin(applicationsTable, eq(applicationsTable.id, interviewsTable.applicationId)).where(eq(applicationsTable.studentUserId, actor.id)),
+      db.select({ value: count() }).from(applicationsTable).where(and(eq(applicationsTable.studentUserId, actor.id), eq(applicationsTable.stage, "shortlisted"))),
+      db.select({ value: count() }).from(applicationsTable).where(and(eq(applicationsTable.studentUserId, actor.id), eq(applicationsTable.stage, "selected"))),
+      db.select({
         application: applicationsTable,
         opportunity: opportunitiesTable,
         company: companiesTable,
@@ -96,7 +82,20 @@ router.get("/dashboard/:role", signedInRole, async (req, res): Promise<void> => 
       .innerJoin(companiesTable, eq(companiesTable.id, opportunitiesTable.companyId))
       .where(eq(applicationsTable.studentUserId, actor.id))
       .orderBy(desc(applicationsTable.appliedAt))
-      .limit(5);
+      .limit(5),
+      db.select({ label: applicationsTable.stage, value: count() })
+        .from(applicationsTable)
+        .where(eq(applicationsTable.studentUserId, actor.id))
+        .groupBy(applicationsTable.stage)
+        .orderBy(applicationsTable.stage),
+    ]);
+
+    stats = [
+      { label: "Applications", value: Number(totalApplications?.value ?? 0), change: "This season" },
+      { label: "Interviews", value: Number(interviewCount?.value ?? 0), change: "Scheduled" },
+      { label: "Shortlisted", value: Number(shortlisted?.value ?? 0), change: "In progress" },
+      { label: "Offers", value: Number(selected?.value ?? 0), change: "Received" },
+    ];
     activity = rows.map(({ application, opportunity, company }) => ({
       id: application.id,
       title: opportunity.title,
@@ -105,129 +104,108 @@ router.get("/dashboard/:role", signedInRole, async (req, res): Promise<void> => 
       type: "application",
       status: application.stage,
     }));
-    const stageCounts = await db
-      .select({ label: applicationsTable.stage, value: count() })
-      .from(applicationsTable)
-      .where(eq(applicationsTable.studentUserId, actor.id))
-      .groupBy(applicationsTable.stage)
-      .orderBy(applicationsTable.stage);
     chart = stageCounts.map((row) => ({
       label: row.label.replaceAll("-", " "),
       value: Number(row.value),
     }));
   } else if (actor.role === "recruiter") {
-    const [jobs] = await db
-      .select({ value: count() })
-      .from(opportunitiesTable)
-      .where(eq(opportunitiesTable.recruiterUserId, actor.id));
-    const [applicants] = await db
-      .select({ value: count(applicationsTable.id) })
-      .from(opportunitiesTable)
-      .leftJoin(applicationsTable, eq(applicationsTable.opportunityId, opportunitiesTable.id))
-      .where(eq(opportunitiesTable.recruiterUserId, actor.id));
-    const [shortlisted] = await db
-      .select({ value: count(applicationsTable.id) })
-      .from(opportunitiesTable)
-      .innerJoin(applicationsTable, eq(applicationsTable.opportunityId, opportunitiesTable.id))
-      .where(
-        and(
-          eq(opportunitiesTable.recruiterUserId, actor.id),
-          eq(applicationsTable.stage, "shortlisted"),
-        ),
-      );
-    const [selected] = await db
-      .select({ value: count(applicationsTable.id) })
-      .from(opportunitiesTable)
-      .innerJoin(applicationsTable, eq(applicationsTable.opportunityId, opportunitiesTable.id))
-      .where(
-        and(
-          eq(opportunitiesTable.recruiterUserId, actor.id),
-          eq(applicationsTable.stage, "selected"),
-        ),
-      );
+    const [
+      [jobs],
+      [applicants],
+      [shortlisted],
+      [selected],
+      stageCounts,
+    ] = await Promise.all([
+      db.select({ value: count() }).from(opportunitiesTable).where(eq(opportunitiesTable.recruiterUserId, actor.id)),
+      db.select({ value: count(applicationsTable.id) }).from(opportunitiesTable).leftJoin(applicationsTable, eq(applicationsTable.opportunityId, opportunitiesTable.id)).where(eq(opportunitiesTable.recruiterUserId, actor.id)),
+      db.select({ value: count(applicationsTable.id) }).from(opportunitiesTable).innerJoin(applicationsTable, eq(applicationsTable.opportunityId, opportunitiesTable.id)).where(and(eq(opportunitiesTable.recruiterUserId, actor.id), eq(applicationsTable.stage, "shortlisted"))),
+      db.select({ value: count(applicationsTable.id) }).from(opportunitiesTable).innerJoin(applicationsTable, eq(applicationsTable.opportunityId, opportunitiesTable.id)).where(and(eq(opportunitiesTable.recruiterUserId, actor.id), eq(applicationsTable.stage, "selected"))),
+      db.select({ label: applicationsTable.stage, value: count() })
+        .from(opportunitiesTable)
+        .innerJoin(applicationsTable, eq(applicationsTable.opportunityId, opportunitiesTable.id))
+        .where(eq(opportunitiesTable.recruiterUserId, actor.id))
+        .groupBy(applicationsTable.stage)
+        .orderBy(applicationsTable.stage),
+    ]);
+
     stats = [
-      { label: "Open roles", value: Number(jobs.value), change: "Published & draft" },
-      { label: "Applicants", value: Number(applicants.value), change: "Across your roles" },
-      { label: "Shortlisted", value: Number(shortlisted.value), change: "Ready to review" },
-      { label: "Offers", value: Number(selected.value), change: "Selected candidates" },
+      { label: "Open roles", value: Number(jobs?.value ?? 0), change: "Published & draft" },
+      { label: "Applicants", value: Number(applicants?.value ?? 0), change: "Across your roles" },
+      { label: "Shortlisted", value: Number(shortlisted?.value ?? 0), change: "Ready to review" },
+      { label: "Offers", value: Number(selected?.value ?? 0), change: "Selected candidates" },
     ];
-    const stageCounts = await db
-      .select({ label: applicationsTable.stage, value: count() })
-      .from(opportunitiesTable)
-      .innerJoin(applicationsTable, eq(applicationsTable.opportunityId, opportunitiesTable.id))
-      .where(eq(opportunitiesTable.recruiterUserId, actor.id))
-      .groupBy(applicationsTable.stage)
-      .orderBy(applicationsTable.stage);
     chart = stageCounts.map((row) => ({
       label: row.label.replaceAll("-", " "),
       value: Number(row.value),
     }));
   } else if (actor.role === "placement-officer") {
-    const [studentCount] = await db
-      .select({ value: count() })
-      .from(usersTable)
-      .where(eq(usersTable.role, "student"));
-    const [companyCount] = await db.select({ value: count() }).from(companiesTable);
-    const [driveCount] = await db
-      .select({ value: count() })
-      .from(placementDrivesTable)
-      .where(eq(placementDrivesTable.status, "scheduled"));
-    const [offerCount] = await db
-      .select({ value: count() })
-      .from(applicationsTable)
-      .where(eq(applicationsTable.stage, "selected"));
+    const [
+      [studentCount],
+      [companyCount],
+      [driveCount],
+      [offerCount],
+      departments,
+    ] = await Promise.all([
+      db.select({ value: count() }).from(usersTable).where(eq(usersTable.role, "student")),
+      db.select({ value: count() }).from(companiesTable),
+      db.select({ value: count() }).from(placementDrivesTable).where(eq(placementDrivesTable.status, "scheduled")),
+      db.select({ value: count() }).from(applicationsTable).where(eq(applicationsTable.stage, "selected")),
+      db.select({ label: studentProfilesTable.department, value: count() })
+        .from(studentProfilesTable)
+        .groupBy(studentProfilesTable.department)
+        .orderBy(studentProfilesTable.department),
+    ]);
+
     stats = [
-      { label: "Students", value: Number(studentCount.value), change: "Active profiles" },
-      { label: "Companies", value: Number(companyCount.value), change: "Registered partners" },
-      { label: "Upcoming drives", value: Number(driveCount.value), change: "Scheduled" },
-      { label: "Offers", value: Number(offerCount.value), change: "Across all companies" },
+      { label: "Students", value: Number(studentCount?.value ?? 0), change: "Active profiles" },
+      { label: "Companies", value: Number(companyCount?.value ?? 0), change: "Registered partners" },
+      { label: "Upcoming drives", value: Number(driveCount?.value ?? 0), change: "Scheduled" },
+      { label: "Offers", value: Number(offerCount?.value ?? 0), change: "Across all companies" },
     ];
-    const departments = await db
-      .select({ label: studentProfilesTable.department, value: count() })
-      .from(studentProfilesTable)
-      .groupBy(studentProfilesTable.department)
-      .orderBy(studentProfilesTable.department);
     chart = departments.map((row) => ({
       label: row.label,
       value: Number(row.value),
     }));
   } else {
-    const [userCount] = await db.select({ value: count() }).from(usersTable);
-    const [companyCount] = await db.select({ value: count() }).from(companiesTable);
-    const [jobCount] = await db
-      .select({ value: count() })
-      .from(opportunitiesTable)
-      .where(eq(opportunitiesTable.status, "published"));
-    const [inactiveCount] = await db
-      .select({ value: count() })
-      .from(usersTable)
-      .where(eq(usersTable.status, "inactive"));
+    const [
+      [userCount],
+      [companyCount],
+      [jobCount],
+      [inactiveCount],
+      roleCounts,
+    ] = await Promise.all([
+      db.select({ value: count() }).from(usersTable),
+      db.select({ value: count() }).from(companiesTable),
+      db.select({ value: count() }).from(opportunitiesTable).where(eq(opportunitiesTable.status, "published")),
+      db.select({ value: count() }).from(usersTable).where(eq(usersTable.status, "inactive")),
+      db.select({ label: usersTable.role, value: count() })
+        .from(usersTable)
+        .groupBy(usersTable.role)
+        .orderBy(usersTable.role),
+    ]);
+
     stats = [
-      { label: "Platform users", value: Number(userCount.value), change: "All roles" },
-      { label: "Companies", value: Number(companyCount.value), change: "Registered" },
-      { label: "Live opportunities", value: Number(jobCount.value), change: "Published" },
-      { label: "Inactive accounts", value: Number(inactiveCount.value), change: "Needs review" },
+      { label: "Platform users", value: Number(userCount?.value ?? 0), change: "All roles" },
+      { label: "Companies", value: Number(companyCount?.value ?? 0), change: "Registered" },
+      { label: "Live opportunities", value: Number(jobCount?.value ?? 0), change: "Published" },
+      { label: "Inactive accounts", value: Number(inactiveCount?.value ?? 0), change: "Needs review" },
     ];
-    const roleCounts = await db
-      .select({ label: usersTable.role, value: count() })
-      .from(usersTable)
-      .groupBy(usersTable.role)
-      .orderBy(usersTable.role);
     chart = roleCounts.map((row) => ({
       label: row.label.replaceAll("-", " "),
       value: Number(row.value),
     }));
   }
 
-  res.json(
-    GetDashboardResponse.parse({
-      role: actor.role,
-      stats,
-      activity,
-      chart,
-      sampleData: true,
-    }),
-  );
+  const responseData = GetDashboardResponse.parse({
+    role: actor.role,
+    stats,
+    activity,
+    chart,
+    sampleData: true,
+  });
+
+  dashboardCache.set(cacheKey, { data: responseData, expiresAt: Date.now() + 30_000 });
+  res.json(responseData);
 });
 
 export default router;

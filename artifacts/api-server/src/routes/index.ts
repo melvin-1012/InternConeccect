@@ -7,10 +7,12 @@ import publicRouter from "./public";
 import recruiterRouter from "./recruiter";
 import storageRouter from "./storage";
 import studentRouter from "./student";
+import authRouter from "./auth";
 
 const router: IRouter = Router();
 
 router.use(healthRouter);
+router.use(authRouter);
 router.use(dashboardRouter);
 router.use(publicRouter);
 router.use(studentRouter);

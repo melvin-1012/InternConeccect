@@ -10,6 +10,7 @@ import {
 } from "@workspace/api-zod";
 import { auditLogsTable, db, usersTable } from "@workspace/db";
 import { requireRole, type AppActor } from "../lib/placementAuth";
+import { memoryCache } from "../lib/memoryCache";
 
 const router: IRouter = Router();
 const adminOnly = requireRole("administrator");
@@ -24,6 +25,14 @@ router.get("/admin/users", adminOnly, async (req, res): Promise<void> => {
     res.status(400).json({ error: query.error.message });
     return;
   }
+
+  const cacheKey = `admin:users:${query.data.role ?? ""}:${query.data.search ?? ""}`;
+  const cached = memoryCache.get<unknown>(cacheKey);
+  if (cached) {
+    res.json(cached);
+    return;
+  }
+
   const conditions = [];
   if (query.data.role) conditions.push(eq(usersTable.role, query.data.role));
   if (query.data.search?.trim()) {
@@ -36,18 +45,20 @@ router.get("/admin/users", adminOnly, async (req, res): Promise<void> => {
     .from(usersTable)
     .where(conditions.length ? and(...conditions) : undefined)
     .orderBy(desc(usersTable.createdAt));
-  res.json(
-    ListAdminUsersResponse.parse(
-      users.map((user) => ({
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        status: user.status,
-        createdAt: user.createdAt,
-      })),
-    ),
+
+  const responseData = ListAdminUsersResponse.parse(
+    users.map((user) => ({
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      status: user.status,
+      createdAt: user.createdAt,
+    })),
   );
+
+  memoryCache.set(cacheKey, responseData, 120_000);
+  res.json(responseData);
 });
 
 router.patch("/admin/users/:id", adminOnly, async (req, res): Promise<void> => {
@@ -88,6 +99,9 @@ router.patch("/admin/users/:id", adminOnly, async (req, res): Promise<void> => {
     details: [body.data.role, body.data.status].filter(Boolean).join(" · "),
   });
 
+  memoryCache.invalidate("admin:users");
+  memoryCache.invalidate("admin:audit");
+
   res.json(
     UpdateAdminUserResponse.parse({
       id: updated.id,
@@ -101,23 +115,32 @@ router.patch("/admin/users/:id", adminOnly, async (req, res): Promise<void> => {
 });
 
 router.get("/admin/audit-events", adminOnly, async (_req, res): Promise<void> => {
+  const cacheKey = "admin:audit";
+  const cached = memoryCache.get<unknown>(cacheKey);
+  if (cached) {
+    res.json(cached);
+    return;
+  }
+
   const events = await db
     .select()
     .from(auditLogsTable)
     .orderBy(desc(auditLogsTable.createdAt))
     .limit(100);
-  res.json(
-    ListAuditEventsResponse.parse(
-      events.map((event) => ({
-        id: event.id,
-        actor: event.actor,
-        action: event.action,
-        target: event.target,
-        createdAt: event.createdAt,
-        details: event.details,
-      })),
-    ),
+
+  const responseData = ListAuditEventsResponse.parse(
+    events.map((event) => ({
+      id: event.id,
+      actor: event.actor,
+      action: event.action,
+      target: event.target,
+      createdAt: event.createdAt,
+      details: event.details,
+    })),
   );
+
+  memoryCache.set(cacheKey, responseData, 60_000);
+  res.json(responseData);
 });
 
 export default router;

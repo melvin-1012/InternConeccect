@@ -15,6 +15,7 @@ import {
   studentProfilesTable,
 } from "@workspace/db";
 import { resolveActor } from "../lib/placementAuth";
+import { memoryCache } from "../lib/memoryCache";
 
 const router: IRouter = Router();
 
@@ -62,28 +63,34 @@ function mapOpportunity(
 }
 
 router.get("/public/stats", async (_req, res): Promise<void> => {
-  const [students] = await db
-    .select({ value: count() })
-    .from(studentProfilesTable);
-  const [companies] = await db.select({ value: count() }).from(companiesTable);
-  const [placements] = await db
-    .select({ value: count() })
-    .from(applicationsTable)
-    .where(eq(applicationsTable.stage, "selected"));
-  const [internships] = await db
-    .select({ value: count() })
-    .from(opportunitiesTable)
-    .where(and(eq(opportunitiesTable.type, "internship"), eq(opportunitiesTable.status, "published")));
+  const cached = memoryCache.get<unknown>("public:stats");
+  if (cached) {
+    res.json(cached);
+    return;
+  }
 
-  res.json(
-    GetPublicStatsResponse.parse({
-      students: Number(students.value),
-      companies: Number(companies.value),
-      placements: Number(placements.value),
-      internships: Number(internships.value),
-      sampleData: true,
-    }),
-  );
+  const [
+    [students],
+    [companies],
+    [placements],
+    [internships],
+  ] = await Promise.all([
+    db.select({ value: count() }).from(studentProfilesTable),
+    db.select({ value: count() }).from(companiesTable),
+    db.select({ value: count() }).from(applicationsTable).where(eq(applicationsTable.stage, "selected")),
+    db.select({ value: count() }).from(opportunitiesTable).where(and(eq(opportunitiesTable.type, "internship"), eq(opportunitiesTable.status, "published"))),
+  ]);
+
+  const data = GetPublicStatsResponse.parse({
+    students: Number(students?.value ?? 0),
+    companies: Number(companies?.value ?? 0),
+    placements: Number(placements?.value ?? 0),
+    internships: Number(internships?.value ?? 0),
+    sampleData: true,
+  });
+
+  memoryCache.set("public:stats", data, 60_000);
+  res.json(data);
 });
 
 router.get("/opportunities", async (req, res): Promise<void> => {
@@ -97,6 +104,14 @@ router.get("/opportunities", async (req, res): Promise<void> => {
   const page = filters.page ?? 1;
   const pageSize = filters.pageSize ?? 12;
   const actor = await resolveActor(req);
+
+  const cacheKey = `public:opps:${actor?.role ?? "guest"}:${actor?.id ?? "none"}:${JSON.stringify(filters)}`;
+  const cached = memoryCache.get<unknown>(cacheKey);
+  if (cached) {
+    res.json(cached);
+    return;
+  }
+
   const conditions =
     actor?.role === "recruiter"
       ? [eq(opportunitiesTable.recruiterUserId, actor.id)]
@@ -159,20 +174,29 @@ router.get("/opportunities", async (req, res): Promise<void> => {
       .limit(1);
   }
 
-  res.json(
-    ListOpportunitiesResponse.parse({
-      items: rows.map((row) => mapOpportunity(row, profile)),
-      total: Number(totalRow.value),
-      page,
-      pageSize,
-    }),
-  );
+  const responseData = ListOpportunitiesResponse.parse({
+    items: rows.map((row) => mapOpportunity(row, profile)),
+    total: Number(totalRow.value),
+    page,
+    pageSize,
+  });
+
+  memoryCache.set(cacheKey, responseData, 60_000);
+  res.json(responseData);
 });
 
 router.get("/opportunities/:id", async (req, res): Promise<void> => {
   const params = GetOpportunityParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
+    return;
+  }
+
+  const actor = await resolveActor(req);
+  const cacheKey = `public:opp:${params.data.id}:${actor?.id ?? "guest"}`;
+  const cached = memoryCache.get<unknown>(cacheKey);
+  if (cached) {
+    res.json(cached);
     return;
   }
 
@@ -194,7 +218,6 @@ router.get("/opportunities/:id", async (req, res): Promise<void> => {
     return;
   }
 
-  const actor = await resolveActor(req);
   if (
     row.opportunity.status !== "published" &&
     !(actor?.role === "recruiter" && actor.id === row.opportunity.recruiterUserId)
@@ -210,7 +233,9 @@ router.get("/opportunities/:id", async (req, res): Promise<void> => {
         .limit(1)
     : [];
 
-  res.json(GetOpportunityResponse.parse(mapOpportunity(row, profile)));
+  const responseData = GetOpportunityResponse.parse(mapOpportunity(row, profile));
+  memoryCache.set(cacheKey, responseData, 60_000);
+  res.json(responseData);
 });
 
 export default router;

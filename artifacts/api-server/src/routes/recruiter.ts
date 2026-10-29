@@ -31,6 +31,7 @@ import {
   usersTable,
 } from "@workspace/db";
 import { requireRole, type AppActor } from "../lib/placementAuth";
+import { memoryCache } from "../lib/memoryCache";
 
 const router: IRouter = Router();
 const recruiterOnly = requireRole("recruiter");
@@ -57,7 +58,15 @@ async function companyForActor(actor: AppActor) {
 }
 
 router.get("/recruiter/company", recruiterOnly, async (_req, res): Promise<void> => {
-  const company = await companyForActor(actorFrom(res));
+  const actor = actorFrom(res);
+  const cacheKey = `recruiter:company:${actor.id}`;
+  const cached = memoryCache.get<unknown>(cacheKey);
+  if (cached) {
+    res.json(cached);
+    return;
+  }
+
+  const company = await companyForActor(actor);
   if (!company) {
     res.status(404).json({ error: "Company profile not found." });
     return;
@@ -72,18 +81,20 @@ router.get("/recruiter/company", recruiterOnly, async (_req, res): Promise<void>
         eq(opportunitiesTable.status, "published"),
       ),
     );
-  res.json(
-    GetRecruiterCompanyResponse.parse({
-      id: company.id,
-      name: company.name,
-      industry: company.industry,
-      location: company.location,
-      website: company.website,
-      description: company.description,
-      verified: company.verified,
-      openRoles: Number(open.value),
-    }),
-  );
+
+  const responseData = GetRecruiterCompanyResponse.parse({
+    id: company.id,
+    name: company.name,
+    industry: company.industry,
+    location: company.location,
+    website: company.website,
+    description: company.description,
+    verified: company.verified,
+    openRoles: Number(open.value),
+  });
+
+  memoryCache.set(cacheKey, responseData, 120_000);
+  res.json(responseData);
 });
 
 router.put("/recruiter/company", recruiterOnly, async (req, res): Promise<void> => {
@@ -306,6 +317,13 @@ router.get("/recruiter/applicants", recruiterOnly, async (req, res): Promise<voi
     return;
   }
 
+  const cacheKey = `recruiter:applicants:${actor.id}:${query.data.opportunityId}:${query.data.stage ?? ""}:${query.data.search ?? ""}`;
+  const cached = memoryCache.get<unknown>(cacheKey);
+  if (cached) {
+    res.json(cached);
+    return;
+  }
+
   const conditions = [eq(applicationsTable.opportunityId, query.data.opportunityId)];
   if (query.data.stage) conditions.push(eq(applicationsTable.stage, query.data.stage));
   if (query.data.search?.trim()) {
@@ -335,25 +353,26 @@ router.get("/recruiter/applicants", recruiterOnly, async (req, res): Promise<voi
     .where(and(...conditions))
     .orderBy(desc(applicationsTable.appliedAt));
 
-  res.json(
-    ListOpportunityApplicantsResponse.parse(
-      rows.map(({ application, opportunity, company, student, profile }) => ({
-        id: application.id,
-        opportunityId: opportunity.id,
-        opportunityTitle: opportunity.title,
-        company: company.name,
-        studentId: student.id,
-        studentName: student.name,
-        department: profile?.department ?? "Unspecified",
-        cgpa: profile?.cgpa ?? 0,
-        appliedAt: application.appliedAt,
-        stage: application.stage,
-        matchScore: application.matchScore,
-        resumePath: profile?.resumePath ?? null,
-        note: application.note,
-      })),
-    ),
+  const responseData = ListOpportunityApplicantsResponse.parse(
+    rows.map(({ application, opportunity, company, student, profile }) => ({
+      id: application.id,
+      opportunityId: opportunity.id,
+      opportunityTitle: opportunity.title,
+      company: company.name,
+      studentId: student.id,
+      studentName: student.name,
+      department: profile?.department ?? "Unspecified",
+      cgpa: profile?.cgpa ?? 0,
+      appliedAt: application.appliedAt,
+      stage: application.stage,
+      matchScore: application.matchScore,
+      resumePath: profile?.resumePath ?? null,
+      note: application.note,
+    })),
   );
+
+  memoryCache.set(cacheKey, responseData, 120_000);
+  res.json(responseData);
 });
 
 router.patch("/applications/:id/stage", recruiterOnly, async (req, res): Promise<void> => {
@@ -416,6 +435,12 @@ router.patch("/applications/:id/stage", recruiterOnly, async (req, res): Promise
     target: existing.student.name,
     details: `${existing.opportunity.title}: ${body.data.stage}`,
   });
+
+  memoryCache.invalidate("recruiter:applicants");
+  memoryCache.invalidate("student:apps");
+  memoryCache.invalidate("student:notifs");
+  memoryCache.invalidate("dashboard:");
+  memoryCache.invalidate("placement:analytics");
 
   res.json(
     UpdateApplicationStageResponse.parse({

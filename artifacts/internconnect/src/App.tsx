@@ -33,7 +33,7 @@ import {
   Compass, FileText, GraduationCap, LayoutDashboard, Menu, Moon, MoreHorizontal,
   Plus, Search, Settings2, ShieldCheck, Sparkles, Sun, Users, X, Bookmark, MapPin,
   BarChart3, ClipboardList, CircleUserRound, Shield, CalendarCheck, Activity, ExternalLink,
-  SlidersHorizontal, ArrowUpRightFromSquare, Layers3, Upload,
+  SlidersHorizontal, ArrowUpRightFromSquare, Layers3, Upload, Phone, Mail, Lock, User,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -50,7 +50,17 @@ import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import NotFound from '@/pages/not-found';
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 1000 * 60 * 5, // 5 minutes: loads instantly on click without loading skeletons
+      gcTime: 1000 * 60 * 30, // 30 minutes in memory
+      refetchOnWindowFocus: false, // Prevents reloading on tab focus
+      refetchOnMount: false, // Uses warm cache immediately
+      retry: 1,
+    },
+  },
+});
 type Role = 'student' | 'recruiter' | 'placement-officer' | 'administrator';
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, '');
 const clerkPubKey = publishableKeyFromHost(window.location.hostname, import.meta.env.VITE_CLERK_PUBLISHABLE_KEY);
@@ -209,7 +219,7 @@ function RolePicker({ compact = false }: { compact?: boolean }) {
   const { role, setRole } = useRole();
   const [, setLocation] = useLocation();
   const client = useQueryClient();
-  return <label className={`role-picker ${compact ? 'role-picker-compact' : ''}`}><span className="role-avatar">{roles.find(r => r.id === role)?.short}</span><span className="role-picker-copy"><strong>{roles.find(r => r.id === role)?.label}</strong><small>DEMO PERSONA · SIMULATED</small></span><ChevronDown size={15} /><select aria-label="Choose a demo persona" value={role} onChange={e => { const next = e.target.value as Role; setRole(next); client.clear(); setLocation(roleHome[next]); }} data-testid="select-demo-role">{roles.map(r => <option value={r.id} key={r.id}>{r.label} — demo persona</option>)}</select></label>;
+  return <label className={`role-picker ${compact ? 'role-picker-compact' : ''}`}><span className="role-avatar">{roles.find(r => r.id === role)?.short}</span><span className="role-picker-copy"><strong>{roles.find(r => r.id === role)?.label}</strong><small>DEMO PERSONA · SIMULATED</small></span><ChevronDown size={15} /><select aria-label="Choose a demo persona" value={role} onChange={e => { const next = e.target.value as Role; setRole(next); client.invalidateQueries(); setLocation(roleHome[next]); }} data-testid="select-demo-role">{roles.map(r => <option value={r.id} key={r.id}>{r.label} — demo persona</option>)}</select></label>;
 }
 function Sidebar({ path, close }: { path: string; close?: () => void }) {
   const { role } = useRole();
@@ -613,50 +623,500 @@ function SignOutAction() {
   const { signOut } = useClerk();
   return <Button variant="ghost" onClick={() => signOut({ redirectUrl: basePath || '/' })} data-testid="button-sign-out">Sign out</Button>;
 }
-function DemoPersonaSelector() {
-  const { setRole } = useRole();
+function SignInPage() {
   const [, setLocation] = useLocation();
+  const { setRole } = useRole();
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
-  const handleSelectRole = (r: Role) => {
-    setRole(r);
-    window.sessionStorage.setItem('internconnect_demo_role', r);
-    setLocation(roleHome[r]);
+  const handleSignIn = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email || !password) {
+      setError('Please provide both email and password.');
+      return;
+    }
+    setError('');
+    setLoading(true);
+
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to sign in.');
+      }
+
+      window.sessionStorage.setItem('internconnect_user_id', data.user.id);
+      window.sessionStorage.setItem('internconnect_demo_role', data.user.role);
+      setRole(data.user.role as Role);
+      setLocation(roleHome[data.user.role as Role]);
+    } catch (err: any) {
+      setError(err.message || 'Invalid credentials.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleFillDemo = (demoEmail: string, roleKey: Role) => {
+    setEmail(demoEmail);
+    setPassword('demo123456');
+    setError('');
   };
 
   return (
-    <div className="bg-white border border-[#dce0ec] rounded-2xl p-6 shadow-sm mb-4 max-w-[440px] w-full text-left">
-      <div className="flex items-center gap-2 mb-1.5">
-        <span className="p-1 rounded-md bg-[#5549df]/10 text-[#5549df]">
-          <Sparkles size={16} />
-        </span>
-        <h3 className="font-semibold text-[#18213d] text-sm">Quick Demo Access</h3>
+    <div className="auth-page">
+      <div className="auth-aside">
+        <BrandAnchor />
+        <div className="auth-message">
+          <span className="eyebrow">YOUR NEXT CHAPTER, CONTINUED</span>
+          <h1>Good to see<br />you again.</h1>
+          <p>Pick up where your campus-to-career story left off.</p>
+        </div>
+        <div className="auth-footer">A clearer path between learning and what’s next.</div>
       </div>
-      <p className="text-xs text-[#69738d] mb-3">
-        Explore the platform instantly using any role:
-      </p>
-      <div className="grid grid-cols-2 gap-2">
-        {roles.map((r) => (
-          <button
-            key={r.id}
-            type="button"
-            onClick={() => handleSelectRole(r.id)}
-            className="flex items-center justify-between p-2.5 rounded-xl border border-[#e2e5f0] hover:border-[#5549df] hover:bg-[#5549df]/5 text-xs font-medium text-[#18213d] transition-all text-left"
-          >
-            <span>{r.label}</span>
-            <span className="text-[10px] bg-[#f0f2f8] px-1.5 py-0.5 rounded font-mono font-bold text-[#5549df]">
-              {r.short}
-            </span>
-          </button>
-        ))}
+      <div className="auth-form-area">
+        <div className="auth-mobile-brand"><BrandAnchor /></div>
+        <div className="bg-white border border-[#dce0ec] rounded-2xl p-7 shadow-sm max-w-[460px] w-full text-left">
+          <div className="mb-5">
+            <h2 className="text-xl font-bold text-[#18213d] mb-1">Sign in to your account</h2>
+            <p className="text-xs text-[#69738d]">Enter your campus credentials to access your dashboard.</p>
+          </div>
+
+          {error && (
+            <div className="mb-4 p-3 rounded-xl bg-red-50 border border-red-200 text-xs text-red-700">
+              {error}
+            </div>
+          )}
+
+          <form onSubmit={handleSignIn} className="space-y-4">
+            <div>
+              <label className="block text-xs font-semibold text-[#18213d] mb-1.5">Email address</label>
+              <div className="relative">
+                <Input
+                  type="email"
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
+                  placeholder="name@university.edu or demo email"
+                  required
+                  className="rounded-xl bg-[#f7f8fc] border-[#dce0ec]"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-[#18213d] mb-1.5">Password</label>
+              <Input
+                type="password"
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                placeholder="Enter your password"
+                required
+                className="rounded-xl bg-[#f7f8fc] border-[#dce0ec]"
+              />
+            </div>
+
+            <Button
+              type="submit"
+              disabled={loading}
+              className="w-full rounded-xl bg-[#5549df] hover:bg-[#4338ca] text-white py-2.5 font-semibold text-sm transition-all"
+            >
+              {loading ? 'Signing in...' : 'Sign in to Workspace'}
+            </Button>
+          </form>
+
+          <div className="mt-6 pt-5 border-t border-[#e6e8f0]">
+            <p className="text-[11px] font-semibold text-[#69738d] mb-2 uppercase tracking-wide">
+              Quick demo login presets:
+            </p>
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              <button
+                type="button"
+                onClick={() => handleFillDemo('student.01@internconnect.demo', 'student')}
+                className="p-2 text-left rounded-lg border border-[#e2e5f0] hover:border-[#5549df] hover:bg-[#5549df]/5 text-[#18213d] font-medium"
+              >
+                🎓 Alex Morgan (Student)
+              </button>
+              <button
+                type="button"
+                onClick={() => handleFillDemo('recruiter.01@internconnect.demo', 'recruiter')}
+                className="p-2 text-left rounded-lg border border-[#e2e5f0] hover:border-[#5549df] hover:bg-[#5549df]/5 text-[#18213d] font-medium"
+              >
+                💼 Rachel Green (Recruiter)
+              </button>
+              <button
+                type="button"
+                onClick={() => handleFillDemo('placement@internconnect.demo', 'placement-officer')}
+                className="p-2 text-left rounded-lg border border-[#e2e5f0] hover:border-[#5549df] hover:bg-[#5549df]/5 text-[#18213d] font-medium"
+              >
+                🏛️ Dr. Patrick (Placement)
+              </button>
+              <button
+                type="button"
+                onClick={() => handleFillDemo('admin@internconnect.demo', 'administrator')}
+                className="p-2 text-left rounded-lg border border-[#e2e5f0] hover:border-[#5549df] hover:bg-[#5549df]/5 text-[#18213d] font-medium"
+              >
+                🛡️ Admin Director
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-5 text-center text-xs text-[#69738d]">
+            Don't have an account yet?{' '}
+            <AppLink href="/sign-up" className="font-semibold text-[#5549df] hover:underline">
+              Register now
+            </AppLink>
+          </div>
+        </div>
+        <span className="auth-back"><AppLink href="/">Back to InternConnect</AppLink></span>
       </div>
     </div>
   );
 }
-function SignInPage() {
-  return <div className="auth-page"><div className="auth-aside"><BrandAnchor /><div className="auth-message"><span className="eyebrow">YOUR NEXT CHAPTER, CONTINUED</span><h1>Good to see<br />you again.</h1><p>Pick up where your campus-to-career story left off.</p></div><div className="auth-footer">A clearer path between learning and what’s next.</div></div><div className="auth-form-area"><div className="auth-mobile-brand"><BrandAnchor /></div><DemoPersonaSelector /><ErrorBoundary FallbackComponent={() => <div className="text-xs text-[#69738d] max-w-[440px] text-center p-3 bg-gray-50 rounded-xl border border-gray-200">To enable real email/Google auth, set your free Clerk publishable key in <code>.env</code>.</div>}><SignIn routing="path" path={`${basePath}/sign-in`} signUpUrl={`${basePath}/sign-up`} /></ErrorBoundary><span className="auth-back"><AppLink href="/">Back to InternConnect</AppLink></span></div></div>;
-}
+
 function SignUpPage() {
-  return <div className="auth-page"><div className="auth-aside"><BrandAnchor /><div className="auth-message"><span className="eyebrow">START WITH WHAT’S NEXT</span><h1>Make room<br />for possibility.</h1><p>A profile, a good opportunity, and the people who can help connect the two.</p></div><div className="auth-footer">Your next step is closer than you think.</div></div><div className="auth-form-area"><div className="auth-mobile-brand"><BrandAnchor /></div><DemoPersonaSelector /><ErrorBoundary FallbackComponent={() => <div className="text-xs text-[#69738d] max-w-[440px] text-center p-3 bg-gray-50 rounded-xl border border-gray-200">To enable real email/Google auth, set your free Clerk publishable key in <code>.env</code>.</div>}><SignUp routing="path" path={`${basePath}/sign-up`} signInUrl={`${basePath}/sign-in`} /></ErrorBoundary><span className="auth-back"><AppLink href="/">Back to InternConnect</AppLink></span></div></div>;
+  const [, setLocation] = useLocation();
+  const { setRole } = useRole();
+  const [selectedRole, setSelectedRole] = useState<Role>('student');
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
+  const [password, setPassword] = useState('');
+
+  // Role specifics
+  const [department, setDepartment] = useState('Computer Science & Engineering');
+  const [degree, setDegree] = useState('B.Tech');
+  const [graduationYear, setGraduationYear] = useState('2027');
+  const [cgpa, setCgpa] = useState('8.5');
+
+  const [companyName, setCompanyName] = useState('');
+  const [industry, setIndustry] = useState('Enterprise Software & Cloud');
+  const [locationStr, setLocationStr] = useState('Bangalore / Remote');
+
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleRegister = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name.trim()) { setError('Full name is required.'); return; }
+    if (!email.trim() || !email.includes('@')) { setError('A valid email address is required.'); return; }
+    if (!phone.trim() || phone.trim().length < 7) { setError('A valid contact phone number is required.'); return; }
+    if (!password || password.length < 6) { setError('Password must be at least 6 characters long.'); return; }
+
+    setError('');
+    setLoading(true);
+
+    try {
+      const payload = {
+        name,
+        email,
+        phone,
+        password,
+        role: selectedRole,
+        department,
+        degree,
+        graduationYear: Number(graduationYear),
+        cgpa: Number(cgpa),
+        companyName,
+        industry,
+        location: locationStr,
+      };
+
+      const res = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to complete registration.');
+      }
+
+      window.sessionStorage.setItem('internconnect_user_id', data.user.id);
+      window.sessionStorage.setItem('internconnect_demo_role', data.user.role);
+      setRole(data.user.role as Role);
+      setLocation(roleHome[data.user.role as Role]);
+    } catch (err: any) {
+      setError(err.message || 'An error occurred during registration.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="auth-page">
+      <div className="auth-aside">
+        <BrandAnchor />
+        <div className="auth-message">
+          <span className="eyebrow">START WITH WHAT’S NEXT</span>
+          <h1>Make room<br />for possibility.</h1>
+          <p>A profile, a good opportunity, and the people who can help connect the two.</p>
+        </div>
+        <div className="auth-footer">Your next step is closer than you think.</div>
+      </div>
+      <div className="auth-form-area">
+        <div className="auth-mobile-brand"><BrandAnchor /></div>
+        <div className="bg-white border border-[#dce0ec] rounded-2xl p-7 shadow-sm max-w-[500px] w-full text-left my-4">
+          <div className="mb-5">
+            <h2 className="text-xl font-bold text-[#18213d] mb-1">Create your account</h2>
+            <p className="text-xs text-[#69738d]">Select your campus role and complete your profile information.</p>
+          </div>
+
+          {error && (
+            <div className="mb-4 p-3 rounded-xl bg-red-50 border border-red-200 text-xs text-red-700">
+              {error}
+            </div>
+          )}
+
+          <form onSubmit={handleRegister} className="space-y-4">
+            {/* Role Selection Option */}
+            <div>
+              <label className="block text-xs font-semibold text-[#18213d] mb-2">
+                1. Select your account role:
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                {roles.map(r => {
+                  const isSelected = selectedRole === r.id;
+                  return (
+                    <button
+                      key={r.id}
+                      type="button"
+                      onClick={() => setSelectedRole(r.id)}
+                      className={`flex items-center justify-between p-3 rounded-xl border text-left transition-all ${
+                        isSelected
+                          ? 'border-[#5549df] bg-[#5549df]/10 text-[#5549df] font-bold shadow-sm'
+                          : 'border-[#e2e5f0] hover:border-[#c5cbe0] text-[#18213d] bg-[#fcfdff]'
+                      }`}
+                    >
+                      <div>
+                        <div className="text-xs font-semibold">{r.label}</div>
+                        <div className="text-[10px] text-[#69738d]">
+                          {r.id === 'student' ? 'Apply & learn' : r.id === 'recruiter' ? 'Post & hire' : r.id === 'placement-officer' ? 'Drives & stats' : 'Governance'}
+                        </div>
+                      </div>
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded font-mono font-bold ${
+                        isSelected ? 'bg-[#5549df] text-white' : 'bg-[#f0f2f8] text-[#69738d]'
+                      }`}>
+                        {r.short}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Basic Information */}
+            <div className="pt-2 border-t border-[#e6e8f0]">
+              <label className="block text-xs font-semibold text-[#18213d] mb-3">
+                2. Personal & Contact Details:
+              </label>
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-[11px] font-medium text-[#4a5568] mb-1">Full name</label>
+                  <Input
+                    type="text"
+                    value={name}
+                    onChange={e => setName(e.target.value)}
+                    placeholder="e.g. Alex Morgan"
+                    required
+                    className="rounded-xl bg-[#f7f8fc] border-[#dce0ec] text-xs"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-medium text-[#4a5568] mb-1">Phone number</label>
+                    <Input
+                      type="tel"
+                      value={phone}
+                      onChange={e => setPhone(e.target.value)}
+                      placeholder="+91 98765 43210"
+                      required
+                      className="rounded-xl bg-[#f7f8fc] border-[#dce0ec] text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-medium text-[#4a5568] mb-1">Email address</label>
+                    <Input
+                      type="email"
+                      value={email}
+                      onChange={e => setEmail(e.target.value)}
+                      placeholder="alex@karunya.edu"
+                      required
+                      className="rounded-xl bg-[#f7f8fc] border-[#dce0ec] text-xs"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-medium text-[#4a5568] mb-1">Create password</label>
+                  <Input
+                    type="password"
+                    value={password}
+                    onChange={e => setPassword(e.target.value)}
+                    placeholder="At least 6 characters"
+                    required
+                    className="rounded-xl bg-[#f7f8fc] border-[#dce0ec] text-xs"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Role Specific Fields */}
+            <div className="pt-2 border-t border-[#e6e8f0]">
+              <label className="block text-xs font-semibold text-[#18213d] mb-3">
+                3. {selectedRole === 'student' ? 'Academic Information:' : selectedRole === 'recruiter' ? 'Company Details:' : 'Role Specifications:'}
+              </label>
+
+              {selectedRole === 'student' && (
+                <div className="space-y-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-medium text-[#4a5568] mb-1">Department</label>
+                      <Select value={department} onValueChange={setDepartment}>
+                        <SelectTrigger className="rounded-xl bg-[#f7f8fc] border-[#dce0ec] text-xs">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Computer Science & Engineering">Computer Science & Engg</SelectItem>
+                          <SelectItem value="Information Technology">Information Technology</SelectItem>
+                          <SelectItem value="Electronics & Communication">Electronics & Comm</SelectItem>
+                          <SelectItem value="Mechanical Engineering">Mechanical Engineering</SelectItem>
+                          <SelectItem value="Civil Engineering">Civil Engineering</SelectItem>
+                          <SelectItem value="Management Studies">Management Studies</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-medium text-[#4a5568] mb-1">Degree</label>
+                      <Select value={degree} onValueChange={setDegree}>
+                        <SelectTrigger className="rounded-xl bg-[#f7f8fc] border-[#dce0ec] text-xs">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="B.Tech">B.Tech</SelectItem>
+                          <SelectItem value="M.Tech">M.Tech</SelectItem>
+                          <SelectItem value="MCA">MCA</SelectItem>
+                          <SelectItem value="MBA">MBA</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-medium text-[#4a5568] mb-1">Graduation year</label>
+                      <Input
+                        type="number"
+                        value={graduationYear}
+                        onChange={e => setGraduationYear(e.target.value)}
+                        placeholder="2027"
+                        className="rounded-xl bg-[#f7f8fc] border-[#dce0ec] text-xs"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-medium text-[#4a5568] mb-1">CGPA (out of 10)</label>
+                      <Input
+                        type="number"
+                        step="0.01"
+                        value={cgpa}
+                        onChange={e => setCgpa(e.target.value)}
+                        placeholder="8.5"
+                        className="rounded-xl bg-[#f7f8fc] border-[#dce0ec] text-xs"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {selectedRole === 'recruiter' && (
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-[11px] font-medium text-[#4a5568] mb-1">Company name</label>
+                    <Input
+                      type="text"
+                      value={companyName}
+                      onChange={e => setCompanyName(e.target.value)}
+                      placeholder="e.g. Nexus Technologies / Microsoft"
+                      required
+                      className="rounded-xl bg-[#f7f8fc] border-[#dce0ec] text-xs"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-medium text-[#4a5568] mb-1">Industry</label>
+                      <Input
+                        type="text"
+                        value={industry}
+                        onChange={e => setIndustry(e.target.value)}
+                        placeholder="Software & Cloud"
+                        className="rounded-xl bg-[#f7f8fc] border-[#dce0ec] text-xs"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-medium text-[#4a5568] mb-1">Location</label>
+                      <Input
+                        type="text"
+                        value={locationStr}
+                        onChange={e => setLocationStr(e.target.value)}
+                        placeholder="Bangalore / Remote"
+                        className="rounded-xl bg-[#f7f8fc] border-[#dce0ec] text-xs"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {selectedRole === 'placement-officer' && (
+                <div>
+                  <label className="block text-[11px] font-medium text-[#4a5568] mb-1">University Office / Cell</label>
+                  <Input
+                    type="text"
+                    value={department}
+                    onChange={e => setDepartment(e.target.value)}
+                    placeholder="Directorate of Placement & Training"
+                    className="rounded-xl bg-[#f7f8fc] border-[#dce0ec] text-xs"
+                  />
+                </div>
+              )}
+
+              {selectedRole === 'administrator' && (
+                <div>
+                  <label className="block text-[11px] font-medium text-[#4a5568] mb-1">Staff / Admin Identifier</label>
+                  <Input
+                    type="text"
+                    defaultValue="ADMIN-SECURE-KEY"
+                    className="rounded-xl bg-[#f7f8fc] border-[#dce0ec] text-xs font-mono"
+                  />
+                </div>
+              )}
+            </div>
+
+            <Button
+              type="submit"
+              disabled={loading}
+              className="w-full rounded-xl bg-[#5549df] hover:bg-[#4338ca] text-white py-2.5 font-semibold text-sm transition-all mt-4"
+            >
+              {loading ? 'Creating your account...' : `Complete Registration as ${roles.find(r => r.id === selectedRole)?.label}`}
+            </Button>
+          </form>
+
+          <div className="mt-5 text-center text-xs text-[#69738d]">
+            Already registered?{' '}
+            <AppLink href="/sign-in" className="font-semibold text-[#5549df] hover:underline">
+              Sign in here
+            </AppLink>
+          </div>
+        </div>
+        <span className="auth-back"><AppLink href="/">Back to InternConnect</AppLink></span>
+      </div>
+    </div>
+  );
 }
 function RoleDashboardRouter() {
   const params = useLocation()[0].split('/');
@@ -698,7 +1158,7 @@ function RouterContents() {
   const setRole = (nextRole: Role) => {
     window.sessionStorage.setItem('internconnect_demo_role', nextRole);
     setRoleState(nextRole);
-    client.clear();
+    client.invalidateQueries();
   };
   return <RoleContext.Provider value={{ role, setRole }}><AppShell><RoutedErrorBoundary><Switch>
     <Route path="/" component={HomeRedirect} />
