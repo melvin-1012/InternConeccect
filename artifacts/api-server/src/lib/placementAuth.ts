@@ -308,15 +308,18 @@ export function requireRole(...allowedRoles: AppRole[]): RequestHandler {
     let actor = await resolveActor(req);
     const allowDemoRoles = process.env.ENABLE_DEMO_ROLES !== "false";
     const demoRole = (req.get("x-demo-role") || req.get("x-user-role")) as AppRole | undefined;
+    const isAdminOnly = allowedRoles.length === 1 && allowedRoles[0] === "administrator";
 
     if (!actor) {
-      if (allowDemoRoles && demoRole && (appRoles as readonly string[]).includes(demoRole)) {
-        const targetRole = allowedRoles.includes(demoRole) ? demoRole : allowedRoles[0];
-        const demoActor = await resolveDemoActor(targetRole);
-        if (demoActor) {
-          res.locals.actor = demoActor;
-          next();
-          return;
+      if (allowDemoRoles) {
+        if (!isAdminOnly || demoRole === "administrator") {
+          const targetRole = demoRole && (appRoles as readonly string[]).includes(demoRole) ? demoRole : allowedRoles[0];
+          const demoActor = await resolveDemoActor(targetRole);
+          if (demoActor) {
+            res.locals.actor = demoActor;
+            next();
+            return;
+          }
         }
       }
       res.status(401).json({ error: "Sign in to continue." });
@@ -324,12 +327,17 @@ export function requireRole(...allowedRoles: AppRole[]): RequestHandler {
     }
 
     if (!allowedRoles.includes(actor.role)) {
-      if (allowDemoRoles && demoRole && (appRoles as readonly string[]).includes(demoRole)) {
-        const switchedActor = await resolveDemoActor(allowedRoles[0]);
-        if (switchedActor) {
-          res.locals.actor = switchedActor;
-          next();
-          return;
+      if (allowDemoRoles) {
+        if (!isAdminOnly || demoRole === "administrator") {
+          const targetRole = demoRole && (appRoles as readonly string[]).includes(demoRole) && allowedRoles.includes(demoRole as AppRole)
+            ? demoRole
+            : allowedRoles[0];
+          const switchedActor = await resolveDemoActor(targetRole);
+          if (switchedActor) {
+            res.locals.actor = switchedActor;
+            next();
+            return;
+          }
         }
       }
       res.status(403).json({ error: "Your account does not have permission for this action." });

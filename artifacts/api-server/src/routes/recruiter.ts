@@ -342,6 +342,10 @@ router.get("/recruiter/applicants", recruiterOnly, async (req, res): Promise<voi
     res.status(400).json({ error: query.error.message });
     return;
   }
+  if (!query.data.opportunityId || !isUuid(query.data.opportunityId)) {
+    res.json([]);
+    return;
+  }
   const actor = actorFrom(res);
   const [ownedJob] = await db
     .select({ id: opportunitiesTable.id })

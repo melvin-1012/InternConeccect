@@ -14,7 +14,7 @@ import {
   studentProfilesTable,
   usersTable,
 } from "@workspace/db";
-import { appRoles, requireRole, resolveDemoActor, type AppActor } from "../lib/placementAuth";
+import { appRoles, requireRole, resolveActor, resolveDemoActor, type AppActor } from "../lib/placementAuth";
 
 const router: IRouter = Router();
 const signedInRole = requireRole(...appRoles);
@@ -25,30 +25,31 @@ function actorFrom(res: { locals: Record<string, unknown> }): AppActor {
 
 const dashboardCache = new Map<string, { data: unknown; expiresAt: number }>();
 
-router.get("/dashboard/:role", signedInRole, async (req, res): Promise<void> => {
-  let actor = actorFrom(res);
+router.get("/dashboard/:role", async (req, res): Promise<void> => {
   const params = GetDashboardParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
     return;
   }
-  if (!appRoles.includes(params.data.role as (typeof appRoles)[number])) {
+  const targetRole = params.data.role as (typeof appRoles)[number];
+  if (!appRoles.includes(targetRole)) {
     res.status(400).json({ error: "Unknown dashboard role." });
     return;
   }
-  if (actor.role !== params.data.role) {
-    const allowDemoRoles = process.env.ENABLE_DEMO_ROLES !== "false";
-    if (allowDemoRoles) {
-      const demoActor = await resolveDemoActor(params.data.role as (typeof appRoles)[number]);
-      if (demoActor) {
-        actor = demoActor;
-      } else {
-        res.status(403).json({ error: "This dashboard is not available to your account." });
-        return;
-      }
+
+  let actor = await resolveActor(req);
+  if (!actor || actor.role !== targetRole) {
+    const demoActor = await resolveDemoActor(targetRole);
+    if (demoActor) {
+      actor = demoActor;
     } else {
-      res.status(403).json({ error: "This dashboard is not available to your account." });
-      return;
+      actor = {
+        id: `demo-${targetRole}-actor`,
+        name: `${targetRole.replace(/-/g, " ")} Demo`,
+        email: `${targetRole}@internconnect.demo`,
+        role: targetRole,
+        isDemo: true,
+      };
     }
   }
 
