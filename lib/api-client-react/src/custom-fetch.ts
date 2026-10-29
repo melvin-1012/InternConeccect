@@ -348,7 +348,15 @@ export async function customFetch<T = unknown>(
       }
     }
     if (!headers.has("x-demo-role")) {
-      const demoRole = window.sessionStorage.getItem("internconnect_demo_role");
+      const urlStr = resolveUrl(input);
+      let demoRole = window.sessionStorage.getItem("internconnect_demo_role");
+      if (urlStr.includes("/api/recruiter/") || urlStr.includes("/api/dashboard/recruiter")) {
+        demoRole = "recruiter";
+      } else if (urlStr.includes("/api/placement/") || urlStr.includes("/api/dashboard/placement-officer")) {
+        demoRole = "placement-officer";
+      } else if (urlStr.includes("/api/admin/") || urlStr.includes("/api/dashboard/administrator")) {
+        demoRole = "administrator";
+      }
       if (
         demoRole &&
         ["student", "recruiter", "placement-officer", "administrator"].includes(demoRole)

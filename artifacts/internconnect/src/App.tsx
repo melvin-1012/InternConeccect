@@ -1146,6 +1146,7 @@ function ClerkQueryClientCacheInvalidator() {
 }
 function RouterContents() {
   const client = useQueryClient();
+  const [path] = useLocation();
   const [role, setRoleState] = useState<Role>(() => {
     const saved = window.sessionStorage.getItem('internconnect_demo_role');
     if (roles.some(item => item.id === saved)) return saved as Role;
@@ -1155,6 +1156,20 @@ function RouterContents() {
     window.sessionStorage.setItem('internconnect_demo_role', initial);
     return initial;
   });
+
+  useEffect(() => {
+    let impliedRole: Role | null = null;
+    if (path.startsWith('/recruiter/') || path === '/dashboard/recruiter') impliedRole = 'recruiter';
+    else if (path.startsWith('/placement/') || path === '/dashboard/placement-officer') impliedRole = 'placement-officer';
+    else if (path.startsWith('/admin/') || path === '/dashboard/administrator') impliedRole = 'administrator';
+    else if (path.startsWith('/student/') || path === '/dashboard/student') impliedRole = 'student';
+
+    if (impliedRole && impliedRole !== role) {
+      window.sessionStorage.setItem('internconnect_demo_role', impliedRole);
+      setRoleState(impliedRole);
+    }
+  }, [path, role]);
+
   const setRole = (nextRole: Role) => {
     window.sessionStorage.setItem('internconnect_demo_role', nextRole);
     setRoleState(nextRole);

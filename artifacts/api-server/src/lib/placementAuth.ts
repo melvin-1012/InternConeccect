@@ -184,9 +184,8 @@ export async function resolveActor(req: Request): Promise<AppActor | null> {
     }
   }
 
-  const demoRole = req.get("x-demo-role");
+  const demoRole = req.get("x-demo-role") || req.get("x-user-role");
   if (
-    !clerkUserId &&
     (process.env.NODE_ENV === "development" || !process.env.NODE_ENV) &&
     demoRole &&
     (appRoles as readonly string[]).includes(demoRole)
@@ -221,6 +220,16 @@ export async function resolveActor(req: Request): Promise<AppActor | null> {
     return actor;
   }
 
+  const claimRole =
+    (typeof claims?.role === "string" && (appRoles as readonly string[]).includes(claims.role) && (claims.role as AppRole)) ||
+    (typeof (claims?.public_metadata as Record<string, unknown> | undefined)?.role === "string" &&
+      (appRoles as readonly string[]).includes((claims?.public_metadata as Record<string, unknown>).role as string) &&
+      ((claims?.public_metadata as Record<string, unknown>).role as AppRole)) ||
+    (typeof (claims?.publicMetadata as Record<string, unknown> | undefined)?.role === "string" &&
+      (appRoles as readonly string[]).includes((claims?.publicMetadata as Record<string, unknown>).role as string) &&
+      ((claims?.publicMetadata as Record<string, unknown>).role as AppRole)) ||
+    "student";
+
   const claimEmail =
     typeof claims?.email === "string" ? claims.email : `member.${clerkUserId}@accounts.internconnect.demo`;
   const claimName =
@@ -234,7 +243,7 @@ export async function resolveActor(req: Request): Promise<AppActor | null> {
       clerkUserId,
       name: claimName,
       email: claimEmail,
-      role: "student",
+      role: claimRole,
       status: "active",
     })
     .onConflictDoUpdate({

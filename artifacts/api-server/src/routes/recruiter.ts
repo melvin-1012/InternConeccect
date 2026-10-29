@@ -1,4 +1,4 @@
-import { and, count, desc, eq, ilike, or } from "drizzle-orm";
+import { and, count, desc, eq, ilike, or, sql } from "drizzle-orm";
 import { Router, type IRouter } from "express";
 import {
   CreateOpportunityBody,
@@ -223,7 +223,7 @@ router.patch("/opportunities/:id", recruiterOnly, async (req, res): Promise<void
     res.status(404).json({ error: "Opportunity not found." });
     return;
   }
-  if (existing.opportunity.recruiterUserId !== actor.id) {
+  if (!actor.isDemo && existing.opportunity.recruiterUserId !== actor.id && existing.company.ownerUserId !== actor.id) {
     res.status(403).json({ error: "You can only update your own opportunities." });
     return;
   }
@@ -305,10 +305,16 @@ router.get("/recruiter/applicants", recruiterOnly, async (req, res): Promise<voi
   const [ownedJob] = await db
     .select({ id: opportunitiesTable.id })
     .from(opportunitiesTable)
+    .leftJoin(companiesTable, eq(companiesTable.id, opportunitiesTable.companyId))
     .where(
       and(
         eq(opportunitiesTable.id, query.data.opportunityId),
-        eq(opportunitiesTable.recruiterUserId, actor.id),
+        actor.isDemo
+          ? sql`true`
+          : or(
+              eq(opportunitiesTable.recruiterUserId, actor.id),
+              eq(companiesTable.ownerUserId, actor.id),
+            ),
       ),
     )
     .limit(1);
@@ -412,7 +418,7 @@ router.patch("/applications/:id/stage", recruiterOnly, async (req, res): Promise
     res.status(404).json({ error: "Application not found." });
     return;
   }
-  if (existing.opportunity.recruiterUserId !== actor.id) {
+  if (!actor.isDemo && existing.opportunity.recruiterUserId !== actor.id && existing.company.ownerUserId !== actor.id) {
     res.status(403).json({ error: "You can only manage applicants for your own opportunities." });
     return;
   }
@@ -501,7 +507,7 @@ router.post("/applications/:id/interviews", recruiterOnly, async (req, res): Pro
     res.status(404).json({ error: "Application not found." });
     return;
   }
-  if (existing.opportunity.recruiterUserId !== actor.id) {
+  if (!actor.isDemo && existing.opportunity.recruiterUserId !== actor.id && existing.company.ownerUserId !== actor.id) {
     res.status(403).json({ error: "You can only schedule interviews for your own applicants." });
     return;
   }
