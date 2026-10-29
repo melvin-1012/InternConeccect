@@ -340,13 +340,21 @@ export async function customFetch<T = unknown>(
   // Demo personas are deliberately session-scoped and are never trusted by
   // the server outside development. A Clerk session, when present, takes
   // precedence in the API authorization layer.
-  if (typeof window !== "undefined" && !headers.has("x-demo-role")) {
-    const demoRole = window.sessionStorage.getItem("internconnect_demo_role");
-    if (
-      demoRole &&
-      ["student", "recruiter", "placement-officer", "administrator"].includes(demoRole)
-    ) {
-      headers.set("x-demo-role", demoRole);
+  if (typeof window !== "undefined") {
+    if (!headers.has("x-user-id")) {
+      const customUserId = window.sessionStorage.getItem("internconnect_user_id");
+      if (customUserId) {
+        headers.set("x-user-id", customUserId);
+      }
+    }
+    if (!headers.has("x-demo-role")) {
+      const demoRole = window.sessionStorage.getItem("internconnect_demo_role");
+      if (
+        demoRole &&
+        ["student", "recruiter", "placement-officer", "administrator"].includes(demoRole)
+      ) {
+        headers.set("x-demo-role", demoRole);
+      }
     }
   }
 

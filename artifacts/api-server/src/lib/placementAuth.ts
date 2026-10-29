@@ -160,6 +160,30 @@ export async function resolveActor(req: Request): Promise<AppActor | null> {
     // Clerk not configured or session invalid
   }
 
+  const customUserId = req.get("x-user-id");
+  if (customUserId) {
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(customUserId);
+    if (isUuid) {
+      const [customUser] = await db
+        .select()
+        .from(usersTable)
+        .where(eq(usersTable.id, customUserId))
+        .limit(1);
+
+      if (customUser) {
+        return {
+          id: customUser.id,
+          name: customUser.name,
+          email: customUser.email,
+          role: appRoles.includes(customUser.role as AppRole)
+            ? (customUser.role as AppRole)
+            : "student",
+          isDemo: false,
+        };
+      }
+    }
+  }
+
   const demoRole = req.get("x-demo-role");
   if (
     !clerkUserId &&

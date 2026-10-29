@@ -23,6 +23,7 @@ import {
   usersTable,
 } from "@workspace/db";
 import { requireRole, type AppActor } from "../lib/placementAuth";
+import { memoryCache } from "../lib/memoryCache";
 
 const router: IRouter = Router();
 const placementOnly = requireRole("placement-officer", "administrator");
@@ -35,6 +36,13 @@ router.get("/placement/students", placementOnly, async (req, res): Promise<void>
   const query = ListPlacementStudentsQueryParams.safeParse(req.query);
   if (!query.success) {
     res.status(400).json({ error: query.error.message });
+    return;
+  }
+
+  const cacheKey = `placement:students:${query.data.department ?? ""}:${query.data.search ?? ""}`;
+  const cached = memoryCache.get<unknown>(cacheKey);
+  if (cached) {
+    res.json(cached);
     return;
   }
 
@@ -59,45 +67,54 @@ router.get("/placement/students", placementOnly, async (req, res): Promise<void>
     .leftJoin(studentProfilesTable, eq(studentProfilesTable.userId, usersTable.id))
     .where(and(...conditions))
     .orderBy(usersTable.name);
-  res.json(
-    ListPlacementStudentsResponse.parse(
-      rows.map(({ user, profile }) => ({
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        department: profile?.department ?? "Unspecified",
-        degree: profile?.degree ?? "B.Tech",
-        graduationYear: profile?.graduationYear ?? 2027,
-        cgpa: profile?.cgpa ?? 0,
-        backlogs: profile?.backlogs ?? 0,
-        skills: profile?.skills ?? [],
-        certifications: profile?.certifications ?? [],
-        projects: profile?.projects ?? [],
-        achievements: profile?.achievements ?? [],
-        resumePath: profile?.resumePath ?? null,
-        github: profile?.github ?? "",
-        linkedin: profile?.linkedin ?? "",
-        portfolio: profile?.portfolio ?? "",
-        preferences: profile?.preferences ?? [],
-        completion: profile
-          ? Math.round(
-              [
-                Boolean(profile.department),
-                Boolean(profile.degree),
-                profile.graduationYear > 0,
-                profile.cgpa > 0,
-                profile.skills.length > 0,
-                profile.projects.length > 0,
-                Boolean(profile.github || profile.linkedin || profile.portfolio),
-              ].filter(Boolean).length * (100 / 7),
-            )
-          : 0,
-      })),
-    ),
+
+  const responseData = ListPlacementStudentsResponse.parse(
+    rows.map(({ user, profile }) => ({
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      department: profile?.department ?? "Unspecified",
+      degree: profile?.degree ?? "B.Tech",
+      graduationYear: profile?.graduationYear ?? 2027,
+      cgpa: profile?.cgpa ?? 0,
+      backlogs: profile?.backlogs ?? 0,
+      skills: profile?.skills ?? [],
+      certifications: profile?.certifications ?? [],
+      projects: profile?.projects ?? [],
+      achievements: profile?.achievements ?? [],
+      resumePath: profile?.resumePath ?? null,
+      github: profile?.github ?? "",
+      linkedin: profile?.linkedin ?? "",
+      portfolio: profile?.portfolio ?? "",
+      preferences: profile?.preferences ?? [],
+      completion: profile
+        ? Math.round(
+            [
+              Boolean(profile.department),
+              Boolean(profile.degree),
+              profile.graduationYear > 0,
+              profile.cgpa > 0,
+              profile.skills.length > 0,
+              profile.projects.length > 0,
+              Boolean(profile.github || profile.linkedin || profile.portfolio),
+            ].filter(Boolean).length * (100 / 7),
+          )
+        : 0,
+    })),
   );
+
+  memoryCache.set(cacheKey, responseData, 120_000);
+  res.json(responseData);
 });
 
 router.get("/placement/companies", placementOnly, async (_req, res): Promise<void> => {
+  const cacheKey = "placement:companies";
+  const cached = memoryCache.get<unknown>(cacheKey);
+  if (cached) {
+    res.json(cached);
+    return;
+  }
+
   const companies = await db
     .select({
       company: companiesTable,
@@ -114,20 +131,21 @@ router.get("/placement/companies", placementOnly, async (_req, res): Promise<voi
     .groupBy(companiesTable.id)
     .orderBy(companiesTable.name);
 
-  res.json(
-    ListPlacementCompaniesResponse.parse(
-      companies.map(({ company, openRoles }) => ({
-        id: company.id,
-        name: company.name,
-        industry: company.industry,
-        location: company.location,
-        website: company.website,
-        description: company.description,
-        verified: company.verified,
-        openRoles: Number(openRoles),
-      })),
-    ),
+  const responseData = ListPlacementCompaniesResponse.parse(
+    companies.map(({ company, openRoles }) => ({
+      id: company.id,
+      name: company.name,
+      industry: company.industry,
+      location: company.location,
+      website: company.website,
+      description: company.description,
+      verified: company.verified,
+      openRoles: Number(openRoles),
+    })),
   );
+
+  memoryCache.set(cacheKey, responseData, 120_000);
+  res.json(responseData);
 });
 
 router.patch("/placement/companies/:id/verification", placementOnly, async (req, res): Promise<void> => {
@@ -168,6 +186,12 @@ router.patch("/placement/companies/:id/verification", placementOnly, async (req,
     action: body.data.verified ? "Company verified" : "Company verification revoked",
     target: company.name,
   });
+
+  memoryCache.invalidate("placement:companies");
+  memoryCache.invalidate("placement:analytics");
+  memoryCache.invalidate("public:opps");
+  memoryCache.invalidate("public:stats");
+
   res.json(
     UpdateCompanyVerificationResponse.parse({
       id: company.id,
@@ -183,6 +207,13 @@ router.patch("/placement/companies/:id/verification", placementOnly, async (req,
 });
 
 router.get("/placement/drives", placementOnly, async (_req, res): Promise<void> => {
+  const cacheKey = "placement:drives";
+  const cached = memoryCache.get<unknown>(cacheKey);
+  if (cached) {
+    res.json(cached);
+    return;
+  }
+
   const rows = await db
     .select({
       drive: placementDrivesTable,
@@ -191,19 +222,21 @@ router.get("/placement/drives", placementOnly, async (_req, res): Promise<void> 
     .from(placementDrivesTable)
     .innerJoin(companiesTable, eq(companiesTable.id, placementDrivesTable.companyId))
     .orderBy(placementDrivesTable.date);
-  res.json(
-    ListPlacementDrivesResponse.parse(
-      rows.map(({ drive, company }) => ({
-        id: drive.id,
-        company: company.name,
-        title: drive.title,
-        date: drive.date,
-        location: drive.location,
-        status: drive.status,
-        opportunityId: drive.opportunityId,
-      })),
-    ),
+
+  const responseData = ListPlacementDrivesResponse.parse(
+    rows.map(({ drive, company }) => ({
+      id: drive.id,
+      company: company.name,
+      title: drive.title,
+      date: drive.date,
+      location: drive.location,
+      status: drive.status,
+      opportunityId: drive.opportunityId,
+    })),
   );
+
+  memoryCache.set(cacheKey, responseData, 120_000);
+  res.json(responseData);
 });
 
 router.post("/placement/drives", placementOnly, async (req, res): Promise<void> => {
@@ -249,6 +282,9 @@ router.post("/placement/drives", placementOnly, async (req, res): Promise<void> 
     details: drive.date,
   });
 
+  memoryCache.invalidate("placement:drives");
+  memoryCache.invalidate("placement:analytics");
+
   res.status(201).json(
     CreatePlacementDriveResponse.parse({
       id: drive.id,
@@ -263,6 +299,13 @@ router.post("/placement/drives", placementOnly, async (req, res): Promise<void> 
 });
 
 router.get("/placement/analytics", placementOnly, async (_req, res): Promise<void> => {
+  const cacheKey = "placement:analytics";
+  const cached = memoryCache.get<unknown>(cacheKey);
+  if (cached) {
+    res.json(cached);
+    return;
+  }
+
   const departmentCounts = await db
     .select({
       label: studentProfilesTable.department,
@@ -305,20 +348,21 @@ router.get("/placement/analytics", placementOnly, async (_req, res): Promise<voi
     packageBands.set(band, (packageBands.get(band) ?? 0) + 1);
   }
 
-  res.json(
-    GetPlacementAnalyticsResponse.parse({
-      departments: departmentCounts.map((item) => ({
-        label: item.label,
-        value: Number(item.value),
-      })),
-      packages: Array.from(packageBands, ([label, value]) => ({ label, value })),
-      outcomes: stages.map((item) => ({
-        label: item.label.replaceAll("-", " "),
-        value: Number(item.value),
-      })),
-      sampleData: true,
-    }),
-  );
+  const responseData = GetPlacementAnalyticsResponse.parse({
+    departments: departmentCounts.map((item) => ({
+      label: item.label,
+      value: Number(item.value),
+    })),
+    packages: Array.from(packageBands, ([label, value]) => ({ label, value })),
+    outcomes: stages.map((item) => ({
+      label: item.label.replaceAll("-", " "),
+      value: Number(item.value),
+    })),
+    sampleData: true,
+  });
+
+  memoryCache.set(cacheKey, responseData, 120_000);
+  res.json(responseData);
 });
 
 export default router;

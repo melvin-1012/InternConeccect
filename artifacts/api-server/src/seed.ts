@@ -14,6 +14,15 @@ import {
 } from "@workspace/db";
 
 export async function ensureSeedData(): Promise<void> {
+  const [existing] = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(opportunitiesTable);
+
+  if (Number(existing?.count ?? 0) >= 4) {
+    console.log("Database already initialized and seeded. Skipping full seed.");
+    return;
+  }
+
   console.log("Checking and ensuring initial seed data in database...");
 
   // 1. Seed or ensure demo users
