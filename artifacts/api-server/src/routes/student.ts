@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, notInArray } from "drizzle-orm";
 import { Router, type IRouter } from "express";
 import {
   ApplyToOpportunityBody,
@@ -14,6 +14,7 @@ import {
   UnsaveOpportunityParams,
   UpdateMyProfileBody,
   UpdateMyProfileResponse,
+  WithdrawMyApplicationParams,
 } from "@workspace/api-zod";
 import {
   applicationsTable,
@@ -160,6 +161,64 @@ router.get("/me/applications", studentOnly, async (_req, res): Promise<void> => 
 
   memoryCache.set(cacheKey, responseData, 120_000);
   res.json(responseData);
+});
+
+router.delete("/me/applications/:id", studentOnly, async (req, res): Promise<void> => {
+  const actor = actorFrom(res);
+  const params = WithdrawMyApplicationParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const id = params.data.id;
+  const isUuid =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);
+  if (!isUuid) {
+    res.status(404).json({ error: "Application not found." });
+    return;
+  }
+
+  const [application] = await db
+    .select({ id: applicationsTable.id, stage: applicationsTable.stage })
+    .from(applicationsTable)
+    .where(
+      and(
+        eq(applicationsTable.id, id),
+        eq(applicationsTable.studentUserId, actor.id),
+      ),
+    )
+    .limit(1);
+  if (!application) {
+    res.status(404).json({ error: "Application not found." });
+    return;
+  }
+  if (application.stage === "selected" || application.stage === "rejected") {
+    res.status(409).json({ error: "This application has already reached a final decision." });
+    return;
+  }
+
+  const [withdrawn] = await db
+    .delete(applicationsTable)
+    .where(
+      and(
+        eq(applicationsTable.id, application.id),
+        eq(applicationsTable.studentUserId, actor.id),
+        notInArray(applicationsTable.stage, ["selected", "rejected"]),
+      ),
+    )
+    .returning({ id: applicationsTable.id });
+  if (!withdrawn) {
+    res.status(409).json({ error: "This application has already reached a final decision." });
+    return;
+  }
+
+  memoryCache.invalidate(`student:apps:${actor.id}`);
+  memoryCache.invalidate(`dashboard:${actor.id}`);
+  memoryCache.invalidate("recruiter:applicants");
+  memoryCache.invalidate("placement:analytics");
+  memoryCache.invalidate("public:stats");
+
+  res.sendStatus(204);
 });
 
 router.post(

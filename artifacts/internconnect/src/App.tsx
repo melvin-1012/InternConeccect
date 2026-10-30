@@ -11,7 +11,7 @@ import {
   getListMyNotificationsQueryKey, getGetRecruiterCompanyQueryKey,
   getListOpportunityApplicantsQueryKey, getListPlacementDrivesQueryKey,
   getListPlacementCompaniesQueryKey, getListAdminUsersQueryKey,
-  getListOpportunitiesQueryKey,
+  getListOpportunitiesQueryKey, getGetDashboardQueryKey,
   useHealthCheck, useGetPublicStats, useListOpportunities, useGetOpportunity, useGetDashboard, useGetMyProfile,
   useUpdateMyProfile, useListMyApplications, useApplyToOpportunity, useListSavedOpportunities,
   useSaveOpportunity, useUnsaveOpportunity, useGetRecruiterCompany, useUpdateRecruiterCompany,
@@ -21,6 +21,7 @@ import {
   useListAuditEvents, useCreateOpportunity, useDeleteOpportunity, useUpdateOpportunity,
   useRequestUploadUrl, useCompleteMyResumeUpload, useScheduleInterview,
   useUpdateCompanyVerification,
+  useWithdrawMyApplication,
 } from '@workspace/api-client-react';
 import type {
   Opportunity, Application, StudentProfileInput, CompanyInput, PlacementDriveInput,
@@ -397,8 +398,30 @@ function ResourceTable({ headers, rows, loading, error, retry, emptyTitle, empty
 }
 function ApplicationsPage() {
   const query = useListMyApplications();
-  const rows = (query.data || []).map((a: Application) => [<strong key="title">{a.opportunityTitle}</strong>, a.company, a.appliedAt, <StatusPill key="stage" tone={a.stage === 'selected' ? 'green' : a.stage === 'rejected' ? 'red' : 'violet'}>{a.stage.replace(/-/g, ' ')}</StatusPill>, `${a.matchScore}%`]);
-  return <div className="page-wrap"><PageTitle eyebrow="YOUR CAREER THREAD" title="Applications" detail="Every role you’ve raised your hand for, and where it stands." actions={<AppButtonLink href="/opportunities">Explore roles<ArrowRight size={15} /></AppButtonLink>} /><ResourceTable headers={['Opportunity', 'Company', 'Applied', 'Stage', 'Fit']} rows={rows} loading={query.isLoading} error={query.isError} retry={() => query.refetch()} emptyTitle="Your next application starts here" emptyDetail="When you apply to a role, its progress will be tracked here." /></div>;
+  const withdraw = useWithdrawMyApplication();
+  const client = useQueryClient();
+  const rows = (query.data || []).map((a: Application) => {
+    const canWithdraw = a.stage !== 'selected' && a.stage !== 'rejected';
+    return [
+      <strong key="title">{a.opportunityTitle}</strong>,
+      a.company,
+      a.appliedAt,
+      <StatusPill key="stage" tone={a.stage === 'selected' ? 'green' : a.stage === 'rejected' ? 'red' : 'violet'}>{a.stage.replace(/-/g, ' ')}</StatusPill>,
+      `${a.matchScore}%`,
+      canWithdraw
+        ? <Button key="withdraw" variant="outline" size="sm" disabled={withdraw.isPending} onClick={() => {
+            if (!window.confirm(`Withdraw your application for ${a.opportunityTitle}?`)) return;
+            withdraw.mutate({ id: a.id }, {
+              onSuccess: () => {
+                client.invalidateQueries({ queryKey: getListMyApplicationsQueryKey() });
+                client.invalidateQueries({ queryKey: getGetDashboardQueryKey('student') });
+              },
+            });
+          }} data-testid={`button-withdraw-application-${a.id}`}>{withdraw.isPending && withdraw.variables?.id === a.id ? 'Withdrawing…' : 'Withdraw'}</Button>
+        : <span key="withdrawn" className="text-muted-foreground">—</span>,
+    ];
+  });
+  return <div className="page-wrap"><PageTitle eyebrow="YOUR CAREER THREAD" title="Applications" detail="Every role you’ve raised your hand for, and where it stands." actions={<AppButtonLink href="/opportunities">Explore roles<ArrowRight size={15} /></AppButtonLink>} />{withdraw.isError && <p className="inline-error" role="alert">Your application could not be withdrawn. Please try again.</p>}<ResourceTable headers={['Opportunity', 'Company', 'Applied', 'Stage', 'Fit', 'Action']} rows={rows} loading={query.isLoading} error={query.isError} retry={() => query.refetch()} emptyTitle="Your next application starts here" emptyDetail="When you apply to a role, its progress will be tracked here." /></div>;
 }
 function SavedPage() {
   const query = useListSavedOpportunities();

@@ -209,6 +209,23 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/Application"
+  /me/applications/{id}:
+    delete:
+      operationId: withdrawMyApplication
+      tags: [student]
+      summary: Withdraw the current student's active application
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "204":
+          description: Application withdrawn
+        "404":
+          description: Application not found
+        "409":
+          description: Application has already reached a final decision
   /opportunities/{id}/apply:
     post:
       operationId: applyToOpportunity
@@ -1059,4 +1076,3 @@ components:
       required: [error]
       properties:
         error: { type: string }
-

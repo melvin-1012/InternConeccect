@@ -968,6 +968,80 @@ export function useListMyApplications<TData = Awaited<ReturnType<typeof listMyAp
 
 
 
+export const getWithdrawMyApplicationUrl = (id: string,) => {
+
+
+
+
+  return `/api/me/applications/${id}`
+}
+
+/**
+ * @summary Withdraw the current student's active application
+ */
+export const withdrawMyApplication = async (id: string, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getWithdrawMyApplicationUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getWithdrawMyApplicationMutationKey = () => ['withdrawMyApplication'] as const;
+
+export const getWithdrawMyApplicationMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof withdrawMyApplication>>, TError,WithdrawMyApplicationMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof withdrawMyApplication>>, TError,WithdrawMyApplicationMutationVariables, TContext> => {
+
+const mutationKey = getWithdrawMyApplicationMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof withdrawMyApplication>>, WithdrawMyApplicationMutationVariables> = (props) => {
+          const {id} = props ?? {};
+
+          return  withdrawMyApplication(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type WithdrawMyApplicationMutationResult = NonNullable<Awaited<ReturnType<typeof withdrawMyApplication>>>
+
+    export type WithdrawMyApplicationMutationError = ErrorType<void>
+    export type WithdrawMyApplicationMutationVariables = {id: string}
+
+    /**
+ * @summary Withdraw the current student's active application
+ */
+export const useWithdrawMyApplication = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof withdrawMyApplication>>, TError,WithdrawMyApplicationMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof withdrawMyApplication>>,
+        TError,
+        WithdrawMyApplicationMutationVariables,
+        TContext
+      > => {
+      return useMutation(getWithdrawMyApplicationMutationOptions(options));
+    }
+
 export const getApplyToOpportunityUrl = (id: string,) => {
 
 

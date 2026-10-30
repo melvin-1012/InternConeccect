@@ -371,6 +371,16 @@ export const ListMyApplicationsResponse = zod.array(ListMyApplicationsResponseIt
 
 
 /**
+ * @summary Withdraw the current student's active application
+ */
+export const WithdrawMyApplicationParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const WithdrawMyApplicationResponse = zod.void()
+
+
+/**
  * @summary Submit an application to an opportunity
  */
 export const ApplyToOpportunityParams = zod.object({
