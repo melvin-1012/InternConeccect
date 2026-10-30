@@ -21,6 +21,7 @@ import {
   ObjectStorageService,
 } from '../lib/objectStorage';
 import { appRoles, requireRole, type AppActor } from '../lib/placementAuth';
+import { memoryCache } from '../lib/memoryCache';
 
 const router: IRouter = Router();
 const objectStorageService = new ObjectStorageService();
@@ -68,13 +69,21 @@ router.post(
     try {
       const actor = actorFrom(res);
       const { size, contentType } = parsed.data;
-      const uploadURL = await objectStorageService.getObjectEntityUploadURL();
+      const rawUploadURL = await objectStorageService.getObjectEntityUploadURL();
       const objectPath =
-        objectStorageService.normalizeObjectEntityPath(uploadURL);
+        objectStorageService.normalizeObjectEntityPath(rawUploadURL);
       if (!objectPath.startsWith('/objects/uploads/')) {
         res.status(500).json({ error: 'Could not prepare a private resume upload.' });
         return;
       }
+
+      const forwardedProto = req.headers['x-forwarded-proto'];
+      const protocol = Array.isArray(forwardedProto) ? forwardedProto[0] : (forwardedProto || req.protocol || 'http');
+      const forwardedHost = req.headers['x-forwarded-host'];
+      const host = Array.isArray(forwardedHost) ? forwardedHost[0] : (forwardedHost || req.get('host') || 'localhost:5000');
+      const uploadURL = rawUploadURL.startsWith('http')
+        ? rawUploadURL
+        : `${protocol}://${host}${rawUploadURL.startsWith('/') ? '' : '/'}${rawUploadURL}`;
 
       await db.insert(resumeFilesTable).values({
         objectPath,
@@ -180,10 +189,26 @@ router.post(
         .update(resumeFilesTable)
         .set({ status: 'complete', completedAt })
         .where(eq(resumeFilesTable.id, record.id));
-      await db
-        .update(studentProfilesTable)
-        .set({ resumePath: record.objectPath })
-        .where(eq(studentProfilesTable.userId, actor.id));
+
+      const [existingProfile] = await db
+        .select({ id: studentProfilesTable.id })
+        .from(studentProfilesTable)
+        .where(eq(studentProfilesTable.userId, actor.id))
+        .limit(1);
+
+      if (existingProfile) {
+        await db
+          .update(studentProfilesTable)
+          .set({ resumePath: record.objectPath })
+          .where(eq(studentProfilesTable.userId, actor.id));
+      } else {
+        await db
+          .insert(studentProfilesTable)
+          .values({ userId: actor.id, resumePath: record.objectPath })
+          .onConflictDoNothing();
+      }
+
+      memoryCache.invalidate(`student:profile:${actor.id}`);
     }
 
     res.json(
@@ -268,7 +293,11 @@ router.get(
       return;
     }
 
-    let permitted = actor.id === record.ownerUserId;
+    let permitted =
+      actor.id === record.ownerUserId ||
+      (actor.role === 'student' && actor.isDemo) ||
+      actor.role === 'placement-officer' ||
+      actor.role === 'administrator';
     if (actor.role === 'placement-officer' || actor.role === 'administrator') {
       permitted = true;
     } else if (actor.role === 'recruiter') {

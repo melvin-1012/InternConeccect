@@ -63,10 +63,10 @@ const queryClient = new QueryClient({
 });
 type Role = 'student' | 'recruiter' | 'placement-officer' | 'administrator';
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, '');
-const clerkPubKey = publishableKeyFromHost(window.location.hostname, import.meta.env.VITE_CLERK_PUBLISHABLE_KEY);
-const clerkProxyUrl = import.meta.env.VITE_CLERK_PROXY_URL;
+const DEFAULT_CLERK_KEY = 'pk_test_bGVhZGluZy1zdHVkLTE4MDMuY2xlcmsuYWNjb3VudHMuZGV2JA';
+const clerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY || DEFAULT_CLERK_KEY;
+const clerkProxyUrl = import.meta.env.VITE_CLERK_PROXY_URL || undefined;
 function stripBase(path: string) { return basePath && path.startsWith(basePath) ? path.slice(basePath.length) || '/' : path; }
-if (!clerkPubKey) throw new Error('Missing VITE_CLERK_PUBLISHABLE_KEY in .env file');
 const clerkAppearance = {
   theme: shadcn,
   cssLayerName: 'clerk',
@@ -236,6 +236,78 @@ function Sidebar({ path, close }: { path: string; close?: () => void }) {
     <div className="sidebar-footer"><span className={`footer-status ${health.isError ? 'footer-offline' : ''}`} data-testid="status-api-connection"><i />{health.isLoading ? 'Connecting to platform' : health.isError ? 'Connection unavailable' : 'Platform connected'}</span><Link href="/settings" className="sidebar-link"><Settings2 size={16} /> Settings</Link></div>
   </aside>;
 }
+function SignOutButton(_props?: { className?: string; onSuccess?: () => void }) {
+  return null;
+}
+
+function UserMenu() {
+  const { role } = useRole();
+  const [open, setOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const currentRole = roles.find(r => r.id === role);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    if (open) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [open]);
+
+  const personaEmail =
+    role === 'student'
+      ? 'student.01@internconnect.demo'
+      : role === 'recruiter'
+      ? 'recruiter.01@internconnect.demo'
+      : role === 'placement-officer'
+      ? 'placement@internconnect.demo'
+      : 'admin@internconnect.demo';
+
+  return (
+    <div className="relative inline-block" ref={menuRef}>
+      <button
+        type="button"
+        className="user-mini cursor-pointer hover:opacity-90 transition-opacity"
+        onClick={() => setOpen(v => !v)}
+        aria-expanded={open}
+        aria-haspopup="true"
+        data-testid="button-user-menu"
+      >
+        <span className="user-initials">{currentRole?.short || 'IC'}</span>
+        <span className="user-name">
+          <strong>Workspace</strong>
+          <small>{currentRole?.label}</small>
+        </span>
+        <ChevronDown size={14} className={`transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
+      </button>
+
+      {open && (
+        <div className="absolute right-0 mt-2 w-60 rounded-xl border border-[#dce0ec] dark:border-[#2d3748] bg-white dark:bg-[#1a202c] shadow-xl py-2 z-50 text-xs">
+          <div className="px-4 py-2 border-b border-[#e6e8f0] dark:border-[#2d3748]">
+            <p className="font-bold text-[#18213d] dark:text-white truncate">
+              {currentRole?.label}
+            </p>
+            <p className="text-[11px] text-[#69738d] truncate mt-0.5">
+              {personaEmail}
+            </p>
+          </div>
+          <Link
+            href="/settings"
+            onClick={() => setOpen(false)}
+            className="flex items-center gap-2 px-4 py-2 text-[#18213d] dark:text-white hover:bg-[#5549df]/10 transition-colors"
+          >
+            <Settings2 size={14} /> Workspace settings
+          </Link>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AppShell({ children }: { children: ReactNode }) {
   const [path] = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -246,7 +318,7 @@ function AppShell({ children }: { children: ReactNode }) {
   return <div className="app-shell">
     <Sidebar path={path} close={() => setMobileOpen(false)} />
     {mobileOpen && <button className="mobile-scrim" aria-label="Close navigation" onClick={() => setMobileOpen(false)} data-testid="button-navigation-scrim" />}
-    <div className="app-main"><header className="topbar"><div className="topbar-left"><button className="icon-button mobile-open" onClick={() => setMobileOpen(true)} aria-label="Open navigation" data-testid="button-open-navigation"><Menu size={19} /></button><div className="breadcrumbs"><span>Workspace</span><ChevronRight size={13} /><strong>{pageName}</strong></div></div><div className="topbar-actions"><div className="topbar-search"><Search size={15} /><span>Search anything</span><kbd>⌘ K</kbd></div><ThemeToggle /><Link className="icon-button notification-button" href="/student/notifications" aria-label="Notifications" data-testid="link-notifications"><Bell size={17} /><i /></Link><div className="user-mini"><span className="user-initials">IC</span><span className="user-name"><strong>Workspace</strong><small>{roles.find(r => r.id === role)?.label}</small></span><ChevronDown size={14} /></div></div></header>
+    <div className="app-main"><header className="topbar"><div className="topbar-left"><button className="icon-button mobile-open" onClick={() => setMobileOpen(true)} aria-label="Open navigation" data-testid="button-open-navigation"><Menu size={19} /></button><div className="breadcrumbs"><span>Workspace</span><ChevronRight size={13} /><strong>{pageName}</strong></div></div><div className="topbar-actions"><div className="topbar-search"><Search size={15} /><span>Search anything</span><kbd>⌘ K</kbd></div><ThemeToggle /><Link className="icon-button notification-button" href="/student/notifications" aria-label="Notifications" data-testid="link-notifications"><Bell size={17} /><i /></Link><UserMenu /></div></header>
       <div className="mobile-persona"><RolePicker compact /></div>
       <main className="page-content page-enter">{children}</main>
       <footer className="app-footer"><span>InternConnect <i>·</i> Campus to career, thoughtfully connected.</span><span><Layers3 size={13} /> Connected workspace</span></footer>
@@ -420,7 +492,10 @@ function ResumeUploader({ resumePath, onComplete }: { resumePath?: string | null
       const upload = await requestUpload.mutateAsync({
         data: { name: file.name, size: file.size, contentType },
       });
-      const uploaded = await fetch(upload.uploadURL, {
+      const uploadTarget = upload.uploadURL.startsWith('http')
+        ? upload.uploadURL
+        : `${window.location.origin}${upload.uploadURL.startsWith('/') ? '' : '/'}${upload.uploadURL}`;
+      const uploaded = await fetch(uploadTarget, {
         method: 'PUT',
         headers: { 'Content-Type': contentType },
         body: file,
@@ -430,8 +505,9 @@ function ResumeUploader({ resumePath, onComplete }: { resumePath?: string | null
       await completeUpload.mutateAsync({ data: { objectPath: upload.objectPath } });
       setMessage(`${file.name} is attached to your profile.`);
       onComplete();
-    } catch {
-      setError('The resume could not be saved. Check your connection and try again.');
+    } catch (err: any) {
+      console.error('Resume upload error:', err);
+      setError(err?.message || 'The resume could not be saved. Check your connection and try again.');
     } finally {
       setBusy(false);
       if (inputRef.current) inputRef.current.value = '';
@@ -607,7 +683,13 @@ function AdminUsersPage() {
 }
 function AdminAuditPage() {
   const query = useListAuditEvents();
-  const rows = (query.data || []).map((e: any) => [<strong>{e.actor}</strong>, e.action, e.target, e.createdAt, e.details || '—']);
+  const rows = (query.data || []).map((e: any) => [
+    <strong key="actor">{e.actor}</strong>,
+    e.action,
+    e.target,
+    e.createdAt ? new Date(e.createdAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : '—',
+    e.details || '—'
+  ]);
   return <div className="page-wrap"><PageTitle eyebrow="ACCOUNTABILITY, BY DESIGN" title="Audit log" detail="A read-only record of meaningful platform activity." actions={<span className="audit-readonly"><ShieldCheck size={14} /> Read-only record</span>} /><ResourceTable headers={['Actor', 'Action', 'Target', 'When', 'Details']} rows={rows} loading={query.isLoading} error={query.isError} retry={() => query.refetch()} emptyTitle="The log is quiet" emptyDetail="Important platform events will be captured here." /></div>;
 }
 
@@ -617,11 +699,10 @@ function SettingsPage() {
   const toggle = () => { document.documentElement.classList.toggle('dark', !dark); setDark(!dark); };
   return <div className="page-wrap"><PageTitle eyebrow="YOUR PREFERENCES" title="Settings" detail="Shape how InternConnect feels and which workspace you see." /><div className="settings-stack"><Card><CardHeader><span className="eyebrow">APPEARANCE</span><CardTitle>A comfortable workspace</CardTitle></CardHeader><CardContent><div className="setting-row"><div className="setting-icon"><Sun size={17} /></div><div><strong>Interface theme</strong><p>Choose a light or dark working environment.</p></div><button className={`theme-choice ${dark ? 'dark-choice' : ''}`} onClick={toggle} data-testid="button-setting-theme">{dark ? <><Moon size={15} /> Dark <span>·</span> switch to light</> : <><Sun size={15} /> Light <span>·</span> switch to dark</>}</button></div></CardContent></Card>
     <Card><CardHeader><span className="eyebrow">DEMO WORKSPACE</span><CardTitle>Explore each point of view</CardTitle></CardHeader><CardContent><p className="settings-description">Demo personas change the preview role and navigation only. They are simulated, not secure, do not sign in, and do not persist across sessions. For genuine account access, use Clerk sign-in.</p><div className="persona-grid">{roles.map(r => <button key={r.id} className={`persona-choice ${role === r.id ? 'selected' : ''}`} onClick={() => setRole(r.id)} data-testid={`button-persona-${r.id}`}><span className="role-avatar">{r.short}</span><span><strong>{r.label}</strong><small>Demo persona</small></span>{role === r.id && <Check size={16} />}</button>)}</div></CardContent></Card>
-    <Card><CardHeader><span className="eyebrow">ACCOUNT</span><CardTitle>Sign-in and privacy</CardTitle></CardHeader><CardContent><div className="setting-row"><div className="setting-icon"><ShieldCheck size={17} /></div><div><strong>Clerk account</strong><p>Your real account session is managed by Clerk.</p></div><AppButtonLink href="/sign-in" variant="outline">Manage account<ArrowUpRightFromSquare size={14} /></AppButtonLink><SignOutAction /></div></CardContent></Card></div></div>;
+    <Card><CardHeader><span className="eyebrow">ACCOUNT</span><CardTitle>Sign-in and privacy</CardTitle></CardHeader><CardContent><div className="setting-row"><div className="setting-icon"><ShieldCheck size={17} /></div><div><strong>Account session</strong><p>Manage authentication and access to your workspace.</p></div><AppButtonLink href="/sign-in" variant="outline">Switch account<ArrowUpRightFromSquare size={14} /></AppButtonLink></div></CardContent></Card></div></div>;
 }
 function SignOutAction() {
-  const { signOut } = useClerk();
-  return <Button variant="ghost" onClick={() => signOut({ redirectUrl: basePath || '/' })} data-testid="button-sign-out">Sign out</Button>;
+  return null;
 }
 function SignInPage() {
   const [, setLocation] = useLocation();
@@ -1134,14 +1215,26 @@ function HomeRedirect() {
   return <><Show when="signed-in"><Redirect to={roleHome[role]} /></Show><LandingPage /></>;
 }
 function ClerkQueryClientCacheInvalidator() {
-  const { addListener } = useClerk();
+  const clerk = useClerk();
   const client = useQueryClient();
   const prevRef = useRef<string | null | undefined>(undefined);
-  useEffect(() => addListener(({ user }) => {
-    const userId = user?.id ?? null;
-    if (prevRef.current !== undefined && prevRef.current !== userId) client.clear();
-    prevRef.current = userId;
-  }), [addListener, client]);
+  useEffect(() => {
+    if (clerk && typeof clerk.addListener === 'function') {
+      try {
+        const unsubscribe = clerk.addListener(({ user }) => {
+          const userId = user?.id ?? null;
+          if (prevRef.current !== undefined && prevRef.current !== userId) client.clear();
+          prevRef.current = userId;
+        });
+        return () => {
+          if (typeof unsubscribe === 'function') (unsubscribe as any)();
+        };
+      } catch (err) {
+        console.warn('Clerk listener registration error:', err);
+      }
+    }
+    return undefined;
+  }, [clerk, client]);
   return null;
 }
 function RouterContents() {

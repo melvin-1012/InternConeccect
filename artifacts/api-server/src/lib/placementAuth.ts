@@ -295,7 +295,7 @@ export async function resolveActor(req: Request): Promise<AppActor | null> {
     id: user.id,
     name: user.name,
     email: user.email,
-    role: "student",
+    role: appRoles.includes(user.role as AppRole) ? (user.role as AppRole) : "student",
     isDemo: false,
   };
 
@@ -313,7 +313,10 @@ export function requireRole(...allowedRoles: AppRole[]): RequestHandler {
     if (!actor) {
       if (allowDemoRoles) {
         if (!isAdminOnly || demoRole === "administrator") {
-          const targetRole = demoRole && (appRoles as readonly string[]).includes(demoRole) ? demoRole : allowedRoles[0];
+          const targetRole =
+            demoRole && (appRoles as readonly string[]).includes(demoRole) && (allowedRoles as readonly string[]).includes(demoRole)
+              ? demoRole
+              : allowedRoles[0];
           const demoActor = await resolveDemoActor(targetRole);
           if (demoActor) {
             res.locals.actor = demoActor;
@@ -329,9 +332,10 @@ export function requireRole(...allowedRoles: AppRole[]): RequestHandler {
     if (!allowedRoles.includes(actor.role)) {
       if (allowDemoRoles) {
         if (!isAdminOnly || demoRole === "administrator") {
-          const targetRole = demoRole && (appRoles as readonly string[]).includes(demoRole) && allowedRoles.includes(demoRole as AppRole)
-            ? demoRole
-            : allowedRoles[0];
+          const targetRole =
+            demoRole && (appRoles as readonly string[]).includes(demoRole) && (allowedRoles as readonly string[]).includes(demoRole)
+              ? demoRole
+              : allowedRoles[0];
           const switchedActor = await resolveDemoActor(targetRole);
           if (switchedActor) {
             res.locals.actor = switchedActor;

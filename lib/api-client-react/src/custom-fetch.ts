@@ -341,27 +341,30 @@ export async function customFetch<T = unknown>(
   // the server outside development. A Clerk session, when present, takes
   // precedence in the API authorization layer.
   if (typeof window !== "undefined") {
-    if (!headers.has("x-user-id")) {
-      const customUserId = window.sessionStorage.getItem("internconnect_user_id");
-      if (customUserId) {
-        headers.set("x-user-id", customUserId);
-      }
+    const urlStr = resolveUrl(input);
+    let demoRole = window.sessionStorage.getItem("internconnect_demo_role") || "student";
+    if (urlStr.includes("/api/recruiter/") || urlStr.includes("/api/dashboard/recruiter")) {
+      demoRole = "recruiter";
+    } else if (urlStr.includes("/api/placement/") || urlStr.includes("/api/dashboard/placement-officer")) {
+      demoRole = "placement-officer";
+    } else if (urlStr.includes("/api/admin/") || urlStr.includes("/api/dashboard/administrator")) {
+      demoRole = "administrator";
+    } else if (urlStr.includes("/api/student/") || urlStr.includes("/api/me/") || urlStr.includes("/api/dashboard/student")) {
+      demoRole = "student";
     }
-    if (!headers.has("x-demo-role")) {
-      const urlStr = resolveUrl(input);
-      let demoRole = window.sessionStorage.getItem("internconnect_demo_role");
-      if (urlStr.includes("/api/recruiter/") || urlStr.includes("/api/dashboard/recruiter")) {
-        demoRole = "recruiter";
-      } else if (urlStr.includes("/api/placement/") || urlStr.includes("/api/dashboard/placement-officer")) {
-        demoRole = "placement-officer";
-      } else if (urlStr.includes("/api/admin/") || urlStr.includes("/api/dashboard/administrator")) {
-        demoRole = "administrator";
-      }
-      if (
-        demoRole &&
-        ["student", "recruiter", "placement-officer", "administrator"].includes(demoRole)
-      ) {
-        headers.set("x-demo-role", demoRole);
+
+    if (!headers.has("x-demo-role") && demoRole) {
+      headers.set("x-demo-role", demoRole);
+    }
+
+    if (!headers.has("x-user-id")) {
+      const storedRole = window.sessionStorage.getItem("internconnect_demo_role");
+      // Only attach stored user ID if the requested endpoint matches the user's logged-in persona
+      if (!storedRole || storedRole === demoRole) {
+        const customUserId = window.sessionStorage.getItem("internconnect_user_id");
+        if (customUserId) {
+          headers.set("x-user-id", customUserId);
+        }
       }
     }
   }

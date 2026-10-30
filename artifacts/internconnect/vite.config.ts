@@ -17,6 +17,13 @@ export default defineConfig({
     react(),
     tailwindcss({ optimize: false }),
   ],
+  define: {
+    'import.meta.env.VITE_CLERK_PUBLISHABLE_KEY': JSON.stringify(
+      process.env.VITE_CLERK_PUBLISHABLE_KEY ||
+      process.env.CLERK_PUBLISHABLE_KEY ||
+      'pk_test_bGVhZGluZy1zdHVkLTE4MDMuY2xlcmsuYWNjb3VudHMuZGV2JA'
+    ),
+  },
   resolve: {
     alias: {
       '@': path.resolve(import.meta.dirname, 'src'),

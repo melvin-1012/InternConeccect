@@ -13,5 +13,7 @@ services:
         sync: false
       - key: CLERK_PUBLISHABLE_KEY
         sync: false
+      - key: VITE_CLERK_PUBLISHABLE_KEY
+        value: pk_test_bGVhZGluZy1zdHVkLTE4MDMuY2xlcmsuYWNjb3VudHMuZGV2JA
       - key: CLERK_SECRET_KEY
         sync: false

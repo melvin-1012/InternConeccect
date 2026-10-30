@@ -114,7 +114,7 @@ router.patch("/admin/users/:id", adminOnly, async (req, res): Promise<void> => {
   );
 });
 
-router.get("/admin/audit-events", adminOnly, async (_req, res): Promise<void> => {
+router.get(["/admin/audit", "/admin/audit-events"], adminOnly, async (_req, res): Promise<void> => {
   const cacheKey = "admin:audit";
   const cached = memoryCache.get<unknown>(cacheKey);
   if (cached) {
